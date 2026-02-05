@@ -2,8 +2,17 @@
 name = "falcon-rs"
 version = "0.1.0"
 edition = "2021"
-description = "Falcon-512 signature scheme with WASM support"
+authors = ["falcon-rs contributors"]
+description = "Rust implementation of Falcon-512 post-quantum signature scheme"
 license = "MIT"
+repository = "https://github.com/anthropics/falcon-rs"
+documentation = "https://docs.rs/falcon-rs"
+readme = "README.md"
+keywords = ["cryptography", "post-quantum", "falcon", "signature", "lattice"]
+categories = ["cryptography"]
+
+[package.metadata.docs.rs]
+features = ["shake"]
 
 [lib]
 crate-type = ["cdylib", "rlib"]
