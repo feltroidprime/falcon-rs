@@ -15,9 +15,27 @@ for i, r in enumerate(fft_roots):
 print("];")
 print()
 
-# Extract NTT roots for n=512
+# Extract NTT roots for all power-of-2 sizes from 2 to 512
+# Store as a flat array with offsets: [2 roots for n=2][4 roots for n=4]...[512 roots for n=512]
+# Total: 2+4+8+...+512 = 1022 entries
+# Offset for size n: sum of 2^i for i in 1..log2(n) = n - 2
+print("// NTT roots of unity mod q for all sizes (2 to 512)")
+print("// Offset for size n: n - 2")
+print("// Access: NTT_ROOTS_ALL[(n - 2) + i] for i in 0..n")
+print("pub const NTT_ROOTS_ALL: [i32; 1022] = [")
+all_roots = []
+for size in [2, 4, 8, 16, 32, 64, 128, 256, 512]:
+    ntt_roots = roots_dict_Zq[size]
+    all_roots.extend(ntt_roots)
+for i in range(0, len(all_roots), 8):
+    line = ", ".join(str(all_roots[j]) for j in range(i, min(i+8, len(all_roots))))
+    print(f"    {line},")
+print("];")
+print()
+
+# Also keep the n=512 roots for convenience
 ntt_roots = roots_dict_Zq[512]
-print("// NTT roots of unity mod q for n=512")
+print("// NTT roots of unity mod q for n=512 (convenience alias)")
 print("pub const NTT_ROOTS: [i32; 512] = [")
 for i in range(0, 512, 8):
     line = ", ".join(str(ntt_roots[j]) for j in range(i, min(i+8, 512)))
