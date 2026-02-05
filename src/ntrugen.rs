@@ -1,12 +1,12 @@
 //! NTRU key generation for Falcon.
 
 use crate::common::sqnorm;
-use crate::fft::{add, adj, adj_fft, add_fft, div, div_fft, fft, ifft, mul, mul_fft};
+use crate::fft::{add, add_fft, adj, adj_fft, div, div_fft, fft, ifft, mul, mul_fft};
 use crate::ntt::ntt;
 use crate::samplerz::samplerz;
-use crate::{Q, N};
+use crate::{N, Q};
 use num_bigint::BigInt;
-use num_traits::{Zero, One, ToPrimitive, Signed};
+use num_traits::{One, Signed, ToPrimitive, Zero};
 
 /// Karatsuba multiplication between polynomials using BigInt.
 /// Returns a polynomial of degree 2n-1 (length 2n).
@@ -31,7 +31,7 @@ fn karatsuba_big(a: &[BigInt], b: &[BigInt]) -> Vec<BigInt> {
         axbx[i] = &axbx[i] - &a0b0[i] - &a1b1[i];
     }
 
-    let mut ab: Vec<BigInt> = (0..2*n).map(|_| BigInt::zero()).collect();
+    let mut ab: Vec<BigInt> = (0..2 * n).map(|_| BigInt::zero()).collect();
     for i in 0..n {
         ab[i] = &ab[i] + &a0b0[i];
         ab[i + n] = &ab[i + n] + &a1b1[i];
@@ -74,7 +74,7 @@ fn field_norm_big(a: &[BigInt]) -> Vec<BigInt> {
 /// Lift from Q[x]/(x^(n/2) + 1) to Q[x]/(x^n + 1).
 fn lift_big(a: &[BigInt]) -> Vec<BigInt> {
     let n = a.len();
-    let mut res: Vec<BigInt> = (0..2*n).map(|_| BigInt::zero()).collect();
+    let mut res: Vec<BigInt> = (0..2 * n).map(|_| BigInt::zero()).collect();
     for i in 0..n {
         res[2 * i] = a[i].clone();
     }
@@ -131,8 +131,14 @@ fn reduce_big(f: &[BigInt], g: &[BigInt], f_mut: &mut [BigInt], g_mut: &mut [Big
         .max(53);
 
     // Adjust f, g for finite precision arithmetic
-    let f_adjust: Vec<f64> = f.iter().map(|x| (x >> (size - 53)).to_f64().unwrap_or(0.0)).collect();
-    let g_adjust: Vec<f64> = g.iter().map(|x| (x >> (size - 53)).to_f64().unwrap_or(0.0)).collect();
+    let f_adjust: Vec<f64> = f
+        .iter()
+        .map(|x| (x >> (size - 53)).to_f64().unwrap_or(0.0))
+        .collect();
+    let g_adjust: Vec<f64> = g
+        .iter()
+        .map(|x| (x >> (size - 53)).to_f64().unwrap_or(0.0))
+        .collect();
     let fa_fft = fft(&f_adjust);
     let ga_fft = fft(&g_adjust);
 
@@ -173,7 +179,10 @@ fn reduce_big(f: &[BigInt], g: &[BigInt], f_mut: &mut [BigInt], g_mut: &mut [Big
         );
         let k_fft = div_fft(&num_fft, &den_fft);
         let k_float = ifft(&k_fft);
-        let k: Vec<BigInt> = k_float.iter().map(|&x| BigInt::from(x.round() as i64)).collect();
+        let k: Vec<BigInt> = k_float
+            .iter()
+            .map(|&x| BigInt::from(x.round() as i64))
+            .collect();
 
         if k.iter().all(|x| x.is_zero()) {
             break;
@@ -224,7 +233,10 @@ fn gs_norm(f: &[i32], g: &[i32]) -> f64 {
     // Compute (f*f* + g*g*)
     let f_float: Vec<f64> = f.iter().map(|&x| x as f64).collect();
     let g_float: Vec<f64> = g.iter().map(|&x| x as f64).collect();
-    let ffgg = add(&mul(&f_float, &adj(&f_float)), &mul(&g_float, &adj(&g_float)));
+    let ffgg = add(
+        &mul(&f_float, &adj(&f_float)),
+        &mul(&g_float, &adj(&g_float)),
+    );
 
     // Ft = adj(g) / (f*f* + g*g*), Gt = adj(f) / (f*f* + g*g*)
     let ft = div(&adj(&g_float), &ffgg);
@@ -326,6 +338,9 @@ mod tests {
     fn test_xgcd_big() {
         let (d, u, v) = xgcd_big(&BigInt::from(35), &BigInt::from(15));
         assert_eq!(d, BigInt::from(5));
-        assert_eq!(&u * BigInt::from(35) + &v * BigInt::from(15), BigInt::from(5));
+        assert_eq!(
+            &u * BigInt::from(35) + &v * BigInt::from(15),
+            BigInt::from(5)
+        );
     }
 }

@@ -2,7 +2,9 @@
 
 /// Split a polynomial f into even and odd coefficients.
 /// f(x) -> (f0(x^2), f1(x^2)) where f(x) = f0(x^2) + x*f1(x^2)
-pub fn split<T: Copy + Default, const N: usize, const HALF: usize>(f: &[T; N]) -> ([T; HALF], [T; HALF]) {
+pub fn split<T: Copy + Default, const N: usize, const HALF: usize>(
+    f: &[T; N],
+) -> ([T; HALF], [T; HALF]) {
     let mut f0 = [T::default(); HALF];
     let mut f1 = [T::default(); HALF];
     for i in 0..HALF {
@@ -14,7 +16,10 @@ pub fn split<T: Copy + Default, const N: usize, const HALF: usize>(f: &[T; N]) -
 
 /// Merge two polynomials into one.
 /// (f0, f1) -> f where f(x) = f0(x^2) + x*f1(x^2)
-pub fn merge<T: Copy + Default, const N: usize, const HALF: usize>(f0: &[T; HALF], f1: &[T; HALF]) -> [T; N] {
+pub fn merge<T: Copy + Default, const N: usize, const HALF: usize>(
+    f0: &[T; HALF],
+    f1: &[T; HALF],
+) -> [T; N] {
     let mut f = [T::default(); N];
     for i in 0..HALF {
         f[2 * i] = f0[i];

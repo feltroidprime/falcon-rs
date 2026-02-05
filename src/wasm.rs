@@ -79,8 +79,7 @@ pub fn verify(vk_bytes: &[u8], message: &[u8], signature: &[u8]) -> Result<bool,
 
     let sig = Signature::from_bytes(signature).map_err(|e| JsError::new(&e.to_string()))?;
 
-    Falcon::<Shake256Hash>::verify(&vk, message, &sig)
-        .map_err(|e| JsError::new(&e.to_string()))
+    Falcon::<Shake256Hash>::verify(&vk, message, &sig).map_err(|e| JsError::new(&e.to_string()))
 }
 
 /// Get the public key length in bytes.

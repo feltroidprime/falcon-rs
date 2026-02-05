@@ -26,7 +26,10 @@ fn test_samplerz_kat512() {
             if pos + n > octets.len() {
                 panic!(
                     "KAT {} ran out of random bytes: need {} more at pos {}, only {} available",
-                    i, n, pos, octets.len()
+                    i,
+                    n,
+                    pos,
+                    octets.len()
                 );
             }
             let result = octets[pos..pos + n].to_vec();

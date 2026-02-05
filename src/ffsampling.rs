@@ -1,6 +1,8 @@
 //! Fast Fourier Sampling for Falcon.
 
-use crate::fft::{add, add_fft, adj, adj_fft, div_fft, merge_fft, mul, mul_fft, split_fft, sub_fft, Complex};
+use crate::fft::{
+    add, add_fft, adj, adj_fft, div_fft, merge_fft, mul, mul_fft, split_fft, sub_fft, Complex,
+};
 use crate::samplerz::samplerz;
 
 /// LDL decomposition tree node.
@@ -23,10 +25,7 @@ pub enum LdlTree {
 /// the Gram matrix in coefficient domain before converting to FFT.
 pub fn gram(b: &[[Vec<f64>; 2]; 2]) -> [[Vec<f64>; 2]; 2] {
     let n = b[0][0].len();
-    let mut g = [
-        [vec![0.0; n], vec![0.0; n]],
-        [vec![0.0; n], vec![0.0; n]],
-    ];
+    let mut g = [[vec![0.0; n], vec![0.0; n]], [vec![0.0; n], vec![0.0; n]]];
 
     for i in 0..2 {
         for j in 0..2 {
@@ -70,14 +69,8 @@ pub fn ffldl_fft(g: &[[Vec<Complex>; 2]; 2]) -> LdlTree {
 
         // Build Gram matrices for recursion
         // g0 corresponds to d00, g1 corresponds to d11
-        let g0 = [
-            [d00_0.clone(), d00_1.clone()],
-            [adj_fft(&d00_1), d00_0],
-        ];
-        let g1 = [
-            [d11_0.clone(), d11_1.clone()],
-            [adj_fft(&d11_1), d11_0],
-        ];
+        let g0 = [[d00_0.clone(), d00_1.clone()], [adj_fft(&d00_1), d00_0]];
+        let g1 = [[d11_0.clone(), d11_1.clone()], [adj_fft(&d11_1), d11_0]];
 
         LdlTree::Node {
             l10: l[1][0].clone(),

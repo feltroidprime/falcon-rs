@@ -21,7 +21,10 @@ impl Complex {
 
     #[inline]
     pub fn conj(self) -> Self {
-        Complex { re: self.re, im: -self.im }
+        Complex {
+            re: self.re,
+            im: -self.im,
+        }
     }
 }
 
@@ -35,7 +38,10 @@ impl std::ops::Add for Complex {
     type Output = Self;
     #[inline]
     fn add(self, rhs: Self) -> Self {
-        Complex { re: self.re + rhs.re, im: self.im + rhs.im }
+        Complex {
+            re: self.re + rhs.re,
+            im: self.im + rhs.im,
+        }
     }
 }
 
@@ -43,7 +49,10 @@ impl std::ops::Sub for Complex {
     type Output = Self;
     #[inline]
     fn sub(self, rhs: Self) -> Self {
-        Complex { re: self.re - rhs.re, im: self.im - rhs.im }
+        Complex {
+            re: self.re - rhs.re,
+            im: self.im - rhs.im,
+        }
     }
 }
 
@@ -74,7 +83,10 @@ impl std::ops::Mul<f64> for Complex {
     type Output = Self;
     #[inline]
     fn mul(self, rhs: f64) -> Self {
-        Complex { re: self.re * rhs, im: self.im * rhs }
+        Complex {
+            re: self.re * rhs,
+            im: self.im * rhs,
+        }
     }
 }
 
@@ -82,7 +94,10 @@ impl std::ops::Neg for Complex {
     type Output = Self;
     #[inline]
     fn neg(self) -> Self {
-        Complex { re: -self.re, im: -self.im }
+        Complex {
+            re: -self.re,
+            im: -self.im,
+        }
     }
 }
 
@@ -234,7 +249,13 @@ mod tests {
         let f_fft = fft(&f);
         let f_back = ifft(&f_fft);
         for i in 0..512 {
-            assert!((f[i] - f_back[i]).abs() < 1e-10, "Mismatch at index {}: {} vs {}", i, f[i], f_back[i]);
+            assert!(
+                (f[i] - f_back[i]).abs() < 1e-10,
+                "Mismatch at index {}: {} vs {}",
+                i,
+                f[i],
+                f_back[i]
+            );
         }
     }
 

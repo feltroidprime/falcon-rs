@@ -2,11 +2,11 @@
 
 use crate::common::sqnorm;
 use crate::encoding::{compress, decompress, deserialize_public_key, serialize_public_key};
-use crate::fft::{add_fft, fft, ifft, mul_fft, Complex};
 use crate::ffsampling::{ffldl_fft, ffsampling_fft, gram, normalize_tree, LdlTree};
+use crate::fft::{add_fft, fft, ifft, mul_fft, Complex};
 use crate::hash_to_point::HashToPoint;
-use crate::ntt::{div_zq, mul_zq, sub_zq};
 use crate::ntrugen::ntru_gen;
+use crate::ntt::{div_zq, mul_zq, sub_zq};
 use crate::rng::ChaCha20;
 use crate::{N, Q, SALT_LEN, SEED_LEN};
 use std::marker::PhantomData;
@@ -120,7 +120,11 @@ impl VerifyingKey {
 impl Signature {
     /// Create a signature from raw components.
     pub fn from_components(header: u8, salt: [u8; SALT_LEN], s1_enc: Vec<u8>) -> Self {
-        Signature { header, salt, s1_enc }
+        Signature {
+            header,
+            salt,
+            s1_enc,
+        }
     }
 
     /// Serialize the signature to bytes.
@@ -184,7 +188,9 @@ impl<H: HashToPoint> Falcon<H> {
     }
 
     /// Generate a new keypair with a provided random byte source.
-    pub fn keygen_with_rng<F: FnMut(usize) -> Vec<u8>>(random_bytes: &mut F) -> (SecretKey, VerifyingKey) {
+    pub fn keygen_with_rng<F: FnMut(usize) -> Vec<u8>>(
+        random_bytes: &mut F,
+    ) -> (SecretKey, VerifyingKey) {
         // Generate NTRU polynomials
         let (f, g, capital_f, capital_g) = ntru_gen(random_bytes);
 
@@ -202,14 +208,8 @@ impl<H: HashToPoint> Falcon<H> {
 
         // B0 in coefficient representation (f64 for Gram computation)
         let b0: [[Vec<f64>; 2]; 2] = [
-            [
-                g_vec.iter().map(|&x| x as f64).collect(),
-                neg_f,
-            ],
-            [
-                capital_g.iter().map(|&x| x as f64).collect(),
-                neg_f_cap,
-            ],
+            [g_vec.iter().map(|&x| x as f64).collect(), neg_f],
+            [capital_g.iter().map(|&x| x as f64).collect(), neg_f_cap],
         ];
 
         // Convert B0 to FFT representation (for use in signing)
@@ -312,8 +312,12 @@ impl<H: HashToPoint> Falcon<H> {
         let t0_fft: Vec<Complex> = point_fft
             .iter()
             .zip(d.iter())
-            .map(|(&p, &d_i)| Complex::new(p.re * d_i.re / q_f64 - p.im * d_i.im / q_f64,
-                                           p.re * d_i.im / q_f64 + p.im * d_i.re / q_f64))
+            .map(|(&p, &d_i)| {
+                Complex::new(
+                    p.re * d_i.re / q_f64 - p.im * d_i.im / q_f64,
+                    p.re * d_i.im / q_f64 + p.im * d_i.re / q_f64,
+                )
+            })
             .collect();
 
         let t1_fft: Vec<Complex> = point_fft

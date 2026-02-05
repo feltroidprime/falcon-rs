@@ -102,7 +102,7 @@ impl VerifyingKey {
 }
 
 pub struct Signature {
-    salt: [u8; SALT_LEN],
+    salt: [u8; SALT_LEN],   // 40 bytes
     s1: Vec<u8>,  // Compressed encoding
 }
 ```

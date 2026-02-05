@@ -154,9 +154,7 @@ mod tests {
     fn test_basesampler() {
         // With uniform random bytes, basesampler should return values in [0, 18]
         let bytes = vec![0xFFu8; 9];
-        let mut random_bytes = |n: usize| -> Vec<u8> {
-            bytes[..n].to_vec()
-        };
+        let mut random_bytes = |n: usize| -> Vec<u8> { bytes[..n].to_vec() };
         let z = basesampler(&mut random_bytes);
         assert!(z >= 0 && z <= 18);
     }
@@ -185,7 +183,10 @@ mod tests {
         let mut pos = 0usize;
         let mut random_bytes = |n: usize| -> Vec<u8> {
             let result = octets[pos..pos + n].to_vec();
-            eprintln!("  Rust randombytes({}) at pos {} -> {:02x?}", n, pos, &result);
+            eprintln!(
+                "  Rust randombytes({}) at pos {} -> {:02x?}",
+                n, pos, &result
+            );
             pos += n;
             result
         };

@@ -4,7 +4,7 @@
 mod tests {
     use falcon_rs::falcon::Falcon;
     use falcon_rs::hash_to_point::Shake256Hash;
-    use falcon_rs::nist_compat::{parse_nist_sm, parse_nist_pk, nist_to_falcon_signature};
+    use falcon_rs::nist_compat::{nist_to_falcon_signature, parse_nist_pk, parse_nist_sm};
     use serde::Deserialize;
 
     #[derive(Deserialize)]
@@ -27,8 +27,8 @@ mod tests {
     #[test]
     fn test_nist_kat_verify() {
         let kat_json = include_str!("../test_vectors/nist_kat.json");
-        let vectors: Vec<NistKatVector> = serde_json::from_str(kat_json)
-            .expect("failed to parse KAT JSON");
+        let vectors: Vec<NistKatVector> =
+            serde_json::from_str(kat_json).expect("failed to parse KAT JSON");
 
         let mut passed = 0;
         let mut failed = 0;

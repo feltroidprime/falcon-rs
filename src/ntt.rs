@@ -1,6 +1,6 @@
 //! Number Theoretic Transform over Z_q[x]/(x^n + 1).
 
-use crate::constants::{ntt_roots, INV_MOD_Q, I2, SQR1};
+use crate::constants::{ntt_roots, I2, INV_MOD_Q, SQR1};
 use crate::Q;
 
 /// Split a polynomial in NTT representation.
@@ -14,7 +14,8 @@ pub fn split_ntt(f_ntt: &[i32]) -> (Vec<i32>, Vec<i32>) {
         let sum = (f_ntt[2 * i] + f_ntt[2 * i + 1]).rem_euclid(Q);
         let diff = (f_ntt[2 * i] - f_ntt[2 * i + 1]).rem_euclid(Q);
         f0_ntt[i] = ((I2 as i64 * sum as i64) % Q as i64) as i32;
-        f1_ntt[i] = ((I2 as i64 * diff as i64 * INV_MOD_Q[w[2 * i] as usize] as i64) % Q as i64) as i32;
+        f1_ntt[i] =
+            ((I2 as i64 * diff as i64 * INV_MOD_Q[w[2 * i] as usize] as i64) % Q as i64) as i32;
     }
     (f0_ntt, f1_ntt)
 }
@@ -81,7 +82,10 @@ pub fn intt(f_ntt: &[i32]) -> Vec<i32> {
 /// Addition of two polynomials in Z_q.
 pub fn add_zq(f: &[i32], g: &[i32]) -> Vec<i32> {
     assert_eq!(f.len(), g.len());
-    f.iter().zip(g.iter()).map(|(&a, &b)| (a + b).rem_euclid(Q)).collect()
+    f.iter()
+        .zip(g.iter())
+        .map(|(&a, &b)| (a + b).rem_euclid(Q))
+        .collect()
 }
 
 /// Negation of a polynomial in Z_q.
@@ -97,7 +101,9 @@ pub fn sub_zq(f: &[i32], g: &[i32]) -> Vec<i32> {
 /// Multiplication in NTT representation (pointwise).
 pub fn mul_ntt(f_ntt: &[i32], g_ntt: &[i32]) -> Vec<i32> {
     assert_eq!(f_ntt.len(), g_ntt.len());
-    f_ntt.iter().zip(g_ntt.iter())
+    f_ntt
+        .iter()
+        .zip(g_ntt.iter())
         .map(|(&a, &b)| ((a as i64 * b as i64) % Q as i64) as i32)
         .collect()
 }
@@ -108,9 +114,13 @@ pub fn div_ntt(f_ntt: &[i32], g_ntt: &[i32]) -> Option<Vec<i32>> {
     if g_ntt.iter().any(|&x| x == 0) {
         return None;
     }
-    Some(f_ntt.iter().zip(g_ntt.iter())
-        .map(|(&a, &b)| ((a as i64 * INV_MOD_Q[b as usize] as i64) % Q as i64) as i32)
-        .collect())
+    Some(
+        f_ntt
+            .iter()
+            .zip(g_ntt.iter())
+            .map(|(&a, &b)| ((a as i64 * INV_MOD_Q[b as usize] as i64) % Q as i64) as i32)
+            .collect(),
+    )
 }
 
 /// Multiplication of two polynomials in coefficient representation.
