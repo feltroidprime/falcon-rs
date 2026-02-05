@@ -11,7 +11,7 @@ crate-type = ["cdylib", "rlib"]
 [dependencies]
 sha3 = { version = "0.10", optional = true }
 wasm-bindgen = { version = "0.2", optional = true }
-getrandom = { version = "0.2", features = ["js"], optional = true }
+getrandom = { version = "0.2", optional = true }
 thiserror = "1.0"
 
 [dev-dependencies]
@@ -21,5 +21,5 @@ hex = "0.4"
 
 [features]
 default = ["shake"]
-shake = ["sha3"]
-wasm = ["wasm-bindgen", "getrandom"]
+shake = ["sha3", "getrandom"]
+wasm = ["wasm-bindgen", "getrandom/js"]

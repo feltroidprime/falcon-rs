@@ -8,32 +8,33 @@ use crate::{Q, N};
 
 /// Karatsuba multiplication between polynomials.
 /// Returns a polynomial of degree 2n-1 (length 2n).
+/// Uses wrapping arithmetic to avoid overflow panics in debug mode.
 fn karatsuba(a: &[i64], b: &[i64]) -> Vec<i64> {
     let n = a.len();
     if n == 1 {
-        return vec![a[0] * b[0], 0];
+        return vec![a[0].wrapping_mul(b[0]), 0];
     }
 
     let n2 = n / 2;
     let (a0, a1) = a.split_at(n2);
     let (b0, b1) = b.split_at(n2);
 
-    let ax: Vec<i64> = a0.iter().zip(a1).map(|(x, y)| x + y).collect();
-    let bx: Vec<i64> = b0.iter().zip(b1).map(|(x, y)| x + y).collect();
+    let ax: Vec<i64> = a0.iter().zip(a1).map(|(x, y)| x.wrapping_add(*y)).collect();
+    let bx: Vec<i64> = b0.iter().zip(b1).map(|(x, y)| x.wrapping_add(*y)).collect();
 
     let a0b0 = karatsuba(a0, b0);
     let a1b1 = karatsuba(a1, b1);
     let mut axbx = karatsuba(&ax, &bx);
 
     for i in 0..n {
-        axbx[i] -= a0b0[i] + a1b1[i];
+        axbx[i] = axbx[i].wrapping_sub(a0b0[i].wrapping_add(a1b1[i]));
     }
 
     let mut ab = vec![0i64; 2 * n];
     for i in 0..n {
-        ab[i] += a0b0[i];
-        ab[i + n] += a1b1[i];
-        ab[i + n2] += axbx[i];
+        ab[i] = ab[i].wrapping_add(a0b0[i]);
+        ab[i + n] = ab[i + n].wrapping_add(a1b1[i]);
+        ab[i + n2] = ab[i + n2].wrapping_add(axbx[i]);
     }
     ab
 }
@@ -42,7 +43,7 @@ fn karatsuba(a: &[i64], b: &[i64]) -> Vec<i64> {
 fn karamul(a: &[i64], b: &[i64]) -> Vec<i64> {
     let n = a.len();
     let ab = karatsuba(a, b);
-    (0..n).map(|i| ab[i] - ab[i + n]).collect()
+    (0..n).map(|i| ab[i].wrapping_sub(ab[i + n])).collect()
 }
 
 /// Galois conjugate of an element a in Q[x] / (x^n + 1).
@@ -65,9 +66,9 @@ fn field_norm(a: &[i64]) -> Vec<i64> {
 
     let mut res = ae_squared;
     for i in 0..n2 - 1 {
-        res[i + 1] -= ao_squared[i];
+        res[i + 1] = res[i + 1].wrapping_sub(ao_squared[i]);
     }
-    res[0] += ao_squared[n2 - 1];
+    res[0] = res[0].wrapping_add(ao_squared[n2 - 1]);
     res
 }
 
@@ -160,9 +161,10 @@ fn reduce(f: &[i64], g: &[i64], f_mut: &mut [i64], g_mut: &mut [i64]) {
         // (F, G) -= k * (f, g)
         let fk = karamul(f, &k);
         let gk = karamul(g, &k);
+        let shift = cap_size - size;
         for i in 0..n {
-            f_mut[i] -= fk[i] << (cap_size - size);
-            g_mut[i] -= gk[i] << (cap_size - size);
+            f_mut[i] = f_mut[i].wrapping_sub(fk[i].wrapping_shl(shift as u32));
+            g_mut[i] = g_mut[i].wrapping_sub(gk[i].wrapping_shl(shift as u32));
         }
     }
 }
@@ -180,11 +182,11 @@ fn xgcd(b: i64, n: i64) -> (i64, i64, i64) {
         b = temp;
 
         let temp = x1;
-        x1 = x0 - q * x1;
+        x1 = x0.wrapping_sub(q.wrapping_mul(x1));
         x0 = temp;
 
         let temp = y1;
-        y1 = y0 - q * y1;
+        y1 = y0.wrapping_sub(q.wrapping_mul(y1));
         y0 = temp;
     }
     (b, x0, y0)
@@ -201,7 +203,8 @@ fn ntru_solve(f: &[i64], g: &[i64]) -> Result<(Vec<i64>, Vec<i64>), ()> {
         if d != 1 {
             return Err(());
         }
-        return Ok((vec![-(Q as i64) * v], vec![(Q as i64) * u]));
+        let q = Q as i64;
+        return Ok((vec![(-q).wrapping_mul(v)], vec![q.wrapping_mul(u)]));
     }
 
     let fp = field_norm(f);
