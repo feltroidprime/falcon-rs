@@ -118,3 +118,123 @@ pub fn nist_to_falcon_signature(nonce: [u8; SALT_LEN], compressed_s1: Vec<u8>) -
     const FALCON_SIG_HEADER: u8 = 0x39; // 0x30 + 9
     Signature::from_components(FALCON_SIG_HEADER, nonce, compressed_s1)
 }
+
+/// NIST secret key format constants for Falcon-512.
+const NIST_SK_HEADER: u8 = 0x59; // 0x50 + 9 (logn for n=512)
+const NIST_SK_F_LEN: usize = 384; // 6-bit trim_i8 encoding for n=512: (512 * 6 + 7) / 8 = 384
+const NIST_SK_G_LEN: usize = 384; // same as f
+const NIST_SK_F_UPPER_LEN: usize = 512; // 8-bit trim_i8 encoding for n=512: 512 * 8 / 8 = 512
+const NIST_SK_LEN: usize = 1 + NIST_SK_F_LEN + NIST_SK_G_LEN + NIST_SK_F_UPPER_LEN; // 1281 bytes
+
+/// Decode NIST trim_i8 format (signed integers packed into bits).
+///
+/// This decodes data packed with `bits` bits per coefficient, where values
+/// are stored as signed integers in two's complement within the bit width.
+pub fn trim_i8_decode(data: &[u8], n: usize, bits: usize) -> Result<Vec<i32>, FalconError> {
+    let expected_len = (n * bits + 7) / 8;
+    if data.len() != expected_len {
+        return Err(FalconError::InvalidSecretKey);
+    }
+
+    let mut result = Vec::with_capacity(n);
+    let mut acc: u32 = 0;
+    let mut acc_len: u32 = 0;
+    let mut byte_idx = 0;
+
+    let mask = (1u32 << bits) - 1;
+    let sign_bit = 1u32 << (bits - 1);
+
+    for _ in 0..n {
+        // Accumulate bytes until we have enough bits
+        while acc_len < bits as u32 {
+            acc = (acc << 8) | (data[byte_idx] as u32);
+            byte_idx += 1;
+            acc_len += 8;
+        }
+
+        // Extract the value
+        acc_len -= bits as u32;
+        let val = (acc >> acc_len) & mask;
+
+        // Sign extend if needed
+        let signed_val = if val >= sign_bit {
+            (val as i32) - (1i32 << bits)
+        } else {
+            val as i32
+        };
+
+        result.push(signed_val);
+    }
+
+    Ok(result)
+}
+
+/// Parse NIST secret key format to extract f, g, F polynomials.
+///
+/// NIST sk format for Falcon-512:
+///     [header: 1B] [f: 384B] [g: 384B] [F: 512B]
+///
+/// Where:
+/// - header = 0x59 (0x50 + 9 for n=512)
+/// - f, g: 6-bit trim_i8 encoding
+/// - F: 8-bit trim_i8 encoding
+pub fn parse_nist_sk(sk: &[u8]) -> Result<([i32; N], [i32; N], [i32; N]), FalconError> {
+    if sk.len() != NIST_SK_LEN {
+        return Err(FalconError::InvalidSecretKey);
+    }
+
+    if sk[0] != NIST_SK_HEADER {
+        return Err(FalconError::InvalidSecretKey);
+    }
+
+    let f_bytes = &sk[1..1 + NIST_SK_F_LEN];
+    let g_bytes = &sk[1 + NIST_SK_F_LEN..1 + NIST_SK_F_LEN + NIST_SK_G_LEN];
+    let f_upper_bytes = &sk[1 + NIST_SK_F_LEN + NIST_SK_G_LEN..];
+
+    let f_vec = trim_i8_decode(f_bytes, N, 6)?;
+    let g_vec = trim_i8_decode(g_bytes, N, 6)?;
+    let f_upper_vec = trim_i8_decode(f_upper_bytes, N, 8)?;
+
+    let mut f = [0i32; N];
+    let mut g = [0i32; N];
+    let mut f_upper = [0i32; N];
+
+    f.copy_from_slice(&f_vec);
+    g.copy_from_slice(&g_vec);
+    f_upper.copy_from_slice(&f_upper_vec);
+
+    Ok((f, g, f_upper))
+}
+
+/// Serialize public key in NIST big-endian format.
+///
+/// NIST uses big-endian (MSB-first) 14-bit packing.
+pub fn serialize_nist_pk(h: &[i32; N]) -> Vec<u8> {
+    let mut result = Vec::with_capacity(NIST_PK_LEN);
+    result.push(NIST_PK_HEADER);
+
+    let mut acc: u32 = 0;
+    let mut acc_len: u32 = 0;
+
+    for &coef in h.iter() {
+        // Ensure coefficient is in valid range [0, Q)
+        let val = coef.rem_euclid(Q) as u32;
+
+        // Accumulate 14 bits
+        acc = (acc << 14) | val;
+        acc_len += 14;
+
+        // Write complete bytes
+        while acc_len >= 8 {
+            acc_len -= 8;
+            result.push((acc >> acc_len) as u8);
+        }
+    }
+
+    // Handle any remaining bits (should be none for 512 coefficients)
+    if acc_len > 0 {
+        result.push((acc << (8 - acc_len)) as u8);
+    }
+
+    result
+}
