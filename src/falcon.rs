@@ -26,6 +26,8 @@ pub const PUBLIC_KEY_LEN: usize = 896;
 pub const SIGNATURE_LEN: usize = SIG_BYTELEN;
 
 /// Error type for Falcon operations.
+///
+/// Represents the various ways Falcon cryptographic operations can fail.
 #[derive(Debug, Clone, PartialEq)]
 pub enum FalconError {
     InvalidPublicKey,
@@ -50,6 +52,15 @@ impl std::fmt::Display for FalconError {
 impl std::error::Error for FalconError {}
 
 /// Secret key for Falcon-512.
+///
+/// Contains the NTRU secret polynomials (f, g, F, G) and precomputed
+/// values for efficient signing. The secret key is used to produce
+/// signatures via lattice-based Gaussian sampling.
+///
+/// # Security
+///
+/// The secret key must be kept confidential. Exposure allows an attacker
+/// to forge signatures.
 pub struct SecretKey {
     /// NTRU secret polynomial f.
     f: [i32; N],
@@ -66,6 +77,13 @@ pub struct SecretKey {
 }
 
 /// Verifying key (public key) for Falcon-512.
+///
+/// Contains the public polynomial h = g/f mod (X^n + 1, q).
+/// Used to verify signatures without access to the secret key.
+///
+/// # Serialization
+///
+/// The verifying key serializes to 896 bytes (512 coefficients at 14 bits each).
 #[derive(Clone)]
 pub struct VerifyingKey {
     /// Public key h = g/f mod (x^n + 1, q).
@@ -73,6 +91,15 @@ pub struct VerifyingKey {
 }
 
 /// Signature for Falcon-512.
+///
+/// A Falcon signature consists of:
+/// - A header byte encoding the parameter set (log2(n))
+/// - A random salt (40 bytes)
+/// - A compressed polynomial s1
+///
+/// # Serialization
+///
+/// The signature serializes to 666 bytes for Falcon-512.
 pub struct Signature {
     /// Header byte (encodes log(n)).
     header: u8,
@@ -161,12 +188,44 @@ impl Signature {
 }
 
 /// Falcon-512 signature scheme parameterized by hash function.
+///
+/// The `Falcon` struct provides the core cryptographic operations:
+/// key generation, signing, and verification.
+///
+/// # Type Parameter
+///
+/// - `H`: The hash function used to map messages to polynomials.
+///   Use [`Shake256Hash`](crate::hash_to_point::Shake256Hash) for standard
+///   Falcon or [`PoseidonHash`](crate::hash_to_point::PoseidonHash) for
+///   Starknet compatibility.
+///
+/// # Example
+///
+/// ```rust,ignore
+/// use falcon_rs::falcon::Falcon;
+/// use falcon_rs::hash_to_point::Shake256Hash;
+///
+/// let (sk, vk) = Falcon::<Shake256Hash>::keygen();
+/// let sig = Falcon::<Shake256Hash>::sign(&sk, b"message");
+/// assert!(Falcon::<Shake256Hash>::verify(&vk, b"message", &sig).unwrap());
+/// ```
 pub struct Falcon<H: HashToPoint> {
     _marker: PhantomData<H>,
 }
 
 impl<H: HashToPoint> Falcon<H> {
     /// Generate a new keypair using system randomness.
+    ///
+    /// Creates a fresh Falcon-512 keypair using the system's cryptographically
+    /// secure random number generator.
+    ///
+    /// # Returns
+    ///
+    /// A tuple of (secret key, verifying key).
+    ///
+    /// # Panics
+    ///
+    /// Panics if the system RNG fails to provide random bytes.
     #[cfg(feature = "shake")]
     pub fn keygen() -> (SecretKey, VerifyingKey) {
         use getrandom::getrandom;
@@ -176,6 +235,18 @@ impl<H: HashToPoint> Falcon<H> {
     }
 
     /// Generate a new keypair with a provided seed.
+    ///
+    /// Creates a deterministic Falcon-512 keypair from the given seed.
+    /// The same seed will always produce the same keypair, which is
+    /// useful for testing and key recovery.
+    ///
+    /// # Arguments
+    ///
+    /// * `seed` - A seed slice (up to 56 bytes used; shorter seeds are zero-padded)
+    ///
+    /// # Returns
+    ///
+    /// A tuple of (secret key, verifying key).
     pub fn keygen_with_seed(seed: &[u8]) -> (SecretKey, VerifyingKey) {
         // Create a deterministic RNG from the seed
         let mut full_seed = [0u8; SEED_LEN];
@@ -188,6 +259,18 @@ impl<H: HashToPoint> Falcon<H> {
     }
 
     /// Generate a new keypair with a provided random byte source.
+    ///
+    /// Creates a Falcon-512 keypair using a custom source of randomness.
+    /// This is the most flexible key generation method, useful for
+    /// deterministic testing or custom RNG implementations.
+    ///
+    /// # Arguments
+    ///
+    /// * `random_bytes` - A closure that returns `n` random bytes when called
+    ///
+    /// # Returns
+    ///
+    /// A tuple of (secret key, verifying key).
     pub fn keygen_with_rng<F: FnMut(usize) -> Vec<u8>>(
         random_bytes: &mut F,
     ) -> (SecretKey, VerifyingKey) {
@@ -245,6 +328,22 @@ impl<H: HashToPoint> Falcon<H> {
     }
 
     /// Sign a message.
+    ///
+    /// Creates a Falcon-512 signature over the given message using
+    /// the secret key. A fresh random salt is generated for each signature.
+    ///
+    /// # Arguments
+    ///
+    /// * `sk` - The secret key to sign with
+    /// * `message` - The message bytes to sign
+    ///
+    /// # Returns
+    ///
+    /// A signature that can be verified with the corresponding verifying key.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the system RNG fails to provide random bytes.
     #[cfg(feature = "shake")]
     pub fn sign(sk: &SecretKey, message: &[u8]) -> Signature {
         use getrandom::getrandom;
@@ -257,6 +356,24 @@ impl<H: HashToPoint> Falcon<H> {
     }
 
     /// Sign a message with a provided salt.
+    ///
+    /// Creates a Falcon-512 signature using a deterministic salt.
+    /// This is useful for testing or when reproducible signatures are needed.
+    ///
+    /// # Arguments
+    ///
+    /// * `sk` - The secret key to sign with
+    /// * `message` - The message bytes to sign
+    /// * `salt` - A 40-byte salt value
+    ///
+    /// # Returns
+    ///
+    /// A signature that can be verified with the corresponding verifying key.
+    ///
+    /// # Note
+    ///
+    /// Using the same salt for different messages may leak information
+    /// about the secret key. In production, prefer [`sign`](Self::sign).
     pub fn sign_with_salt(sk: &SecretKey, message: &[u8], salt: &[u8; SALT_LEN]) -> Signature {
         let hashed = H::hash_to_point(message, salt);
         let hashed_i32: Vec<i32> = hashed.iter().map(|&x| x as i32).collect();
@@ -356,6 +473,20 @@ impl<H: HashToPoint> Falcon<H> {
     }
 
     /// Verify a signature.
+    ///
+    /// Checks that a signature is valid for the given message and verifying key.
+    ///
+    /// # Arguments
+    ///
+    /// * `vk` - The verifying key (public key)
+    /// * `message` - The message that was supposedly signed
+    /// * `sig` - The signature to verify
+    ///
+    /// # Returns
+    ///
+    /// - `Ok(true)` if the signature is valid
+    /// - `Ok(false)` if the signature is mathematically invalid (wrong key or message)
+    /// - `Err(FalconError)` if the signature is malformed
     pub fn verify(vk: &VerifyingKey, message: &[u8], sig: &Signature) -> Result<bool, FalconError> {
         // Decompress s1
         let s1 = decompress(&sig.s1_enc, N).ok_or(FalconError::DecompressionFailed)?;

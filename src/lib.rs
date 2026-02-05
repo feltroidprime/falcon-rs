@@ -1,4 +1,34 @@
-//! Falcon-512 signature scheme implementation.
+//! # falcon-rs
+//!
+//! Rust implementation of the Falcon-512 post-quantum digital signature scheme.
+//!
+//! ## Quick Start
+//!
+//! ```rust,ignore
+//! use falcon_rs::falcon::Falcon;
+//! use falcon_rs::hash_to_point::Shake256Hash;
+//!
+//! // Generate keypair
+//! let falcon = Falcon::<Shake256Hash>::new();
+//! let (sk, vk) = falcon.keygen();
+//!
+//! // Sign and verify
+//! let msg = b"Hello!";
+//! let sig = sk.sign(msg);
+//! assert!(vk.verify::<Shake256Hash>(msg, &sig).unwrap());
+//! ```
+//!
+//! ## Features
+//!
+//! - `shake` - Enable SHAKE256 hash function (default)
+//! - `wasm` - Enable WebAssembly bindings
+//!
+//! ## ⚠️ Security Warning
+//!
+//! This implementation is **NOT side-channel resistant**. It is ported from
+//! the reference implementation which prioritizes correctness over constant-time
+//! execution. Do not use in production environments where timing attacks are
+//! a concern.
 
 pub mod common;
 pub mod constants;

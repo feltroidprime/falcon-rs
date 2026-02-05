@@ -1,4 +1,7 @@
-//! HashToPoint trait and implementations.
+//! Hash-to-point trait for customizable hash functions.
+//!
+//! Falcon requires hashing messages to points in Z_q[X]/(X^n + 1).
+//! This module provides the trait and a default SHAKE256 implementation.
 
 use crate::{N, Q, SALT_LEN};
 
