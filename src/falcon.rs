@@ -97,6 +97,11 @@ impl SecretKey {
 }
 
 impl VerifyingKey {
+    /// Create a verifying key from raw h polynomial.
+    pub fn from_h(h: [i32; N]) -> Self {
+        VerifyingKey { h }
+    }
+
     /// Serialize the verifying key to bytes.
     pub fn to_bytes(&self) -> [u8; PUBLIC_KEY_LEN] {
         let vec = serialize_public_key(&self.h);
@@ -113,6 +118,11 @@ impl VerifyingKey {
 }
 
 impl Signature {
+    /// Create a signature from raw components.
+    pub fn from_components(header: u8, salt: [u8; SALT_LEN], s1_enc: Vec<u8>) -> Self {
+        Signature { header, salt, s1_enc }
+    }
+
     /// Serialize the signature to bytes.
     pub fn to_bytes(&self) -> Vec<u8> {
         let mut bytes = Vec::with_capacity(HEAD_LEN + SALT_LEN + self.s1_enc.len());

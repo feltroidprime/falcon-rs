@@ -11,6 +11,7 @@ pub mod encoding;
 pub mod hash_to_point;
 pub mod falcon;
 pub mod common;
+pub mod nist_compat;
 
 #[cfg(feature = "wasm")]
 pub mod wasm;
