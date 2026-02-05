@@ -8,9 +8,10 @@ Cargo.lock
 # IDE
 .idea/
 *.iml
+.vscode/
 
 # Python
-__pycache__
+__pycache__/
 *.py[cod]
 *$py.class
 *.so
@@ -25,5 +26,13 @@ venv/
 ENV/
 env/
 
+# Reference implementations (download separately if needed)
+/falcon-round3/
+/falcon-round3.zip
+
+# Test artifacts
+*.log
+
 # OS
 .DS_Store
+Thumbs.db
