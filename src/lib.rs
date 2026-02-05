@@ -1,17 +1,18 @@
 //! Falcon-512 signature scheme implementation.
 
+pub mod common;
 pub mod constants;
-pub mod ntt;
+pub mod encoding;
+pub mod falcon;
+pub mod ffsampling;
 pub mod fft;
+pub mod hash_to_point;
+pub mod nist_compat;
+pub mod nist_drbg;
+pub mod ntrugen;
+pub mod ntt;
 pub mod rng;
 pub mod samplerz;
-pub mod ffsampling;
-pub mod ntrugen;
-pub mod encoding;
-pub mod hash_to_point;
-pub mod falcon;
-pub mod common;
-pub mod nist_compat;
 
 #[cfg(feature = "wasm")]
 pub mod wasm;
