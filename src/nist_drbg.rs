@@ -120,4 +120,23 @@ mod tests {
 
         assert_eq!(out1, out2);
     }
+
+    #[test]
+    fn test_drbg_kat_seed() {
+        // First KAT seed
+        let seed_hex = "061550234D158C5EC95595FE04EF7A25767F2E24CC2BC479D09D86DC9ABCFDE7056A8C266F9EF97ED08541DBD2E1FFA1";
+        let seed_bytes: Vec<u8> = (0..seed_hex.len())
+            .step_by(2)
+            .map(|i| u8::from_str_radix(&seed_hex[i..i + 2], 16).unwrap())
+            .collect();
+
+        let mut seed_arr = [0u8; 48];
+        seed_arr.copy_from_slice(&seed_bytes);
+
+        let mut drbg = NistDrbg::new();
+        drbg.init(&seed_arr, None);
+        let output = drbg.generate_vec(64);
+
+        eprintln!("Rust: {}", output.iter().map(|b| format!("{:02x}", b)).collect::<String>());
+    }
 }
