@@ -189,6 +189,28 @@ pub fn adj_fft(f: &[Complex]) -> Vec<Complex> {
     f.iter().map(|&a| a.conj()).collect()
 }
 
+// Coefficient representation operations (via FFT)
+
+/// Addition of two polynomials (coefficient representation).
+pub fn add(f: &[f64], g: &[f64]) -> Vec<f64> {
+    f.iter().zip(g.iter()).map(|(&a, &b)| a + b).collect()
+}
+
+/// Multiplication of two polynomials (coefficient representation, via FFT).
+pub fn mul(f: &[f64], g: &[f64]) -> Vec<f64> {
+    ifft(&mul_fft(&fft(f), &fft(g)))
+}
+
+/// Division of two polynomials (coefficient representation, via FFT).
+pub fn div(f: &[f64], g: &[f64]) -> Vec<f64> {
+    ifft(&div_fft(&fft(f), &fft(g)))
+}
+
+/// Adjoint of a polynomial (coefficient representation, via FFT).
+pub fn adj(f: &[f64]) -> Vec<f64> {
+    ifft(&adj_fft(&fft(f)))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
