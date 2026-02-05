@@ -39,8 +39,8 @@ mod tests {
         let vectors: Vec<NistKatVector> =
             serde_json::from_str(kat_json).expect("failed to parse KAT JSON");
 
-        // Test parsing first 10 vectors
-        for v in vectors.iter().take(10) {
+        // Test parsing all 100 vectors
+        for v in vectors.iter() {
             let sk_bytes = hex_decode(&v.sk);
 
             let result = parse_nist_sk(&sk_bytes);
@@ -92,7 +92,7 @@ mod tests {
         let mut passed = 0;
         let mut failed = 0;
 
-        for v in vectors.iter().take(10) {
+        for v in vectors.iter() {
             let expected_pk = hex_decode(&v.pk);
             let sk_bytes = hex_decode(&v.sk);
 
@@ -159,7 +159,7 @@ mod tests {
         let mut passed = 0;
         let mut failed = 0;
 
-        for v in vectors.iter().take(10) {
+        for v in vectors.iter() {
             let expected_pk = hex_decode(&v.pk);
             let expected_sk = hex_decode(&v.sk);
             let expected_sm = hex_decode(&v.sm);
