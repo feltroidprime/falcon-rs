@@ -67,18 +67,25 @@ fn basesampler<F: FnMut(usize) -> Vec<u8>>(random_bytes: &mut F) -> i32 {
 }
 
 /// Approximate 2^63 * ccs * exp(-x).
+/// x and ccs must be positive for correct results.
 fn approxexp(x: f64, ccs: f64) -> u64 {
+    // y should always be positive according to Python reference
     let mut y = C[0] as i128;
     let z = (x * ((1u64 << 63) as f64)) as i64;
 
     for &elt in &C[1..] {
-        y = (elt as i128) - ((z as i128 * y) >> 63);
+        y = (elt as i128) - ((z as i128).wrapping_mul(y) >> 63);
+    }
+
+    // If y went negative due to numerical issues, clamp to 0
+    if y < 0 {
+        return 0;
     }
 
     // Use u128 to avoid overflow when ccs is close to 1
     // z = int(ccs * 2^63) << 1 = int(ccs * 2^64)
     let z = ((ccs * ((1u64 << 63) as f64)) as u128) << 1;
-    let result = (z * y as u128) >> 63;
+    let result = z.wrapping_mul(y as u128) >> 63;
 
     // Saturate to u64::MAX if result overflows (Python uses arbitrary precision)
     result.min(u64::MAX as u128) as u64

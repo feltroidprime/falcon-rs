@@ -1,6 +1,6 @@
 //! Fast Fourier Sampling for Falcon.
 
-use crate::fft::{add_fft, adj_fft, div_fft, merge_fft, mul_fft, split_fft, sub_fft, Complex};
+use crate::fft::{add, add_fft, adj, adj_fft, div_fft, merge_fft, mul, mul_fft, split_fft, sub_fft, Complex};
 use crate::samplerz::samplerz;
 
 /// LDL decomposition tree node.
@@ -16,20 +16,23 @@ pub enum LdlTree {
     },
 }
 
-/// Compute Gram matrix of B (2x2 matrix of polynomials in FFT representation).
+/// Compute Gram matrix of B in coefficient representation.
 /// G[i][j] = sum_k B[i][k] * adj(B[j][k])
-pub fn gram(b: &[[Vec<Complex>; 2]; 2]) -> [[Vec<Complex>; 2]; 2] {
+///
+/// This matches the Python reference implementation which computes
+/// the Gram matrix in coefficient domain before converting to FFT.
+pub fn gram(b: &[[Vec<f64>; 2]; 2]) -> [[Vec<f64>; 2]; 2] {
     let n = b[0][0].len();
     let mut g = [
-        [vec![Complex::ZERO; n], vec![Complex::ZERO; n]],
-        [vec![Complex::ZERO; n], vec![Complex::ZERO; n]],
+        [vec![0.0; n], vec![0.0; n]],
+        [vec![0.0; n], vec![0.0; n]],
     ];
 
     for i in 0..2 {
         for j in 0..2 {
             for k in 0..2 {
-                let prod = mul_fft(&b[i][k], &adj_fft(&b[j][k]));
-                g[i][j] = add_fft(&g[i][j], &prod);
+                let prod = mul(&b[i][k], &adj(&b[j][k]));
+                g[i][j] = add(&g[i][j], &prod);
             }
         }
     }
