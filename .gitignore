@@ -1,0 +1,13 @@
+# Worktrees
+.worktrees/
+
+# Rust
+/target/
+Cargo.lock
+
+# IDE
+.idea/
+*.iml
+
+# OS
+.DS_Store
