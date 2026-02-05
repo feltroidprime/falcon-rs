@@ -9,5 +9,21 @@ Cargo.lock
 .idea/
 *.iml
 
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+dist/
+eggs/
+*.egg-info/
+*.egg
+.venv/
+venv/
+ENV/
+env/
+
 # OS
 .DS_Store
