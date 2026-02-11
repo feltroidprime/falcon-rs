@@ -41,6 +41,7 @@ pub mod nist_compat;
 pub mod nist_drbg;
 pub mod ntrugen;
 pub mod ntt;
+pub mod poseidon_hash;
 pub mod rng;
 pub mod samplerz;
 

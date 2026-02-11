@@ -53,18 +53,6 @@ impl HashToPoint for Shake256Hash {
     }
 }
 
-/// Poseidon-based hash (placeholder for Starknet compatibility).
-///
-/// This will be implemented with Starknet's Poseidon hash function
-/// for use in browser wallets.
-pub struct PoseidonHash;
-
-impl HashToPoint for PoseidonHash {
-    fn hash_to_point(_message: &[u8], _salt: &[u8; SALT_LEN]) -> [i16; N] {
-        todo!("Implement Starknet Poseidon hash mapping")
-    }
-}
-
 #[cfg(all(test, feature = "shake"))]
 mod tests {
     use super::*;
