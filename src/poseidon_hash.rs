@@ -1,9 +1,9 @@
-//! Poseidon XOF hash_to_point for Falcon-512 (Starknet-compatible).
+//! Poseidon hash_to_point for Falcon-512 (Starknet-compatible).
 //!
 //! Uses lambdaworks PoseidonCairoStark252 to match the Cairo implementation.
 //! Produces 512 coefficients in [0, Q) from (message, salt) using:
-//! - Poseidon sponge (rate=2, capacity=1)
-//! - Base-Q extraction: felt252 -> 2x u128 -> 6 DivRem-by-Q each -> 12 coefficients per felt252
+//! - poseidon_hash_span(message || salt) -> single felt252 seed
+//! - Squeeze: 22 hades_permutations, base-Q extraction (12 Zq per felt252)
 
 use crate::hash_to_point::HashToPoint;
 use crate::{N, Q};
@@ -22,42 +22,27 @@ impl HashToPoint for PoseidonHashToPoint {
     /// Hash message and salt (as felt252 arrays) to 512 Zq coefficients.
     /// This matches the Cairo PoseidonHashToPoint implementation exactly.
     fn hash_to_point(message: &[Felt], salt: &[Felt]) -> [i16; N] {
-        let mut state = [Felt::zero(), Felt::zero(), Felt::zero()];
+        // Absorb: poseidon_hash_span(message || salt) -> single felt252 seed
+        let combined: Vec<Felt> = message.iter().chain(salt.iter()).cloned().collect();
+        let seed = PoseidonCairoStark252::hash_many(&combined);
 
-        // Absorb message then salt (rate=2)
-        absorb(&mut state, message);
-        absorb(&mut state, salt);
-        state[2] = state[2] + Felt::one(); // domain separation
-
-        // Squeeze
+        // Squeeze: 21 full rounds (504 coefficients) + 1 partial round (8 coefficients)
+        let mut state = [seed, Felt::zero(), Felt::zero()];
         let mut coeffs = [0i16; N];
         let mut idx = 0;
-        while idx < N {
+
+        for _ in 0..21 {
             PoseidonCairoStark252::hades_permutation(&mut state);
             idx += extract_12_from_felt(&state[0], &mut coeffs, idx);
-            if idx >= N {
-                break;
-            }
             idx += extract_12_from_felt(&state[1], &mut coeffs, idx);
         }
-        coeffs
-    }
-}
 
-fn absorb(state: &mut [Felt; 3], input: &[Felt]) {
-    let mut iter = input.iter();
-    loop {
-        match iter.next() {
-            None => break,
-            Some(first) => {
-                state[0] = state[0] + *first;
-                match iter.next() {
-                    Some(second) => state[1] = state[1] + *second,
-                    None => state[1] = state[1] + Felt::one(), // pad
-                }
-                PoseidonCairoStark252::hades_permutation(state);
-            }
-        }
+        // Final round: only need 8 more from state[0]
+        PoseidonCairoStark252::hades_permutation(&mut state);
+        extract_12_from_felt(&state[0], &mut coeffs, idx);
+        // extract_12 stops at N=512, giving exactly 8 (6 from low + 2 from high)
+
+        coeffs
     }
 }
 
