@@ -5,6 +5,7 @@
 //! - Poseidon sponge (rate=2, capacity=1)
 //! - Base-Q extraction: felt252 -> 2x u128 -> 6 DivRem-by-Q each -> 12 coefficients per felt252
 
+use crate::hash_to_point::HashToPoint;
 use crate::{N, Q};
 use lambdaworks_crypto::hash::poseidon::starknet::PoseidonCairoStark252;
 use lambdaworks_crypto::hash::poseidon::Poseidon;
@@ -15,11 +16,13 @@ pub type Felt = FieldElement<Stark252PrimeField>;
 
 pub struct PoseidonHashToPoint;
 
-impl PoseidonHashToPoint {
+impl HashToPoint for PoseidonHashToPoint {
+    type Input = Felt;
+
     /// Hash message and salt (as felt252 arrays) to 512 Zq coefficients.
     /// This matches the Cairo PoseidonHashToPoint implementation exactly.
-    pub fn hash_to_point(message: &[Felt], salt: &[Felt]) -> [i16; N] {
-        let mut state = vec![Felt::zero(), Felt::zero(), Felt::zero()];
+    fn hash_to_point(message: &[Felt], salt: &[Felt]) -> [i16; N] {
+        let mut state = [Felt::zero(), Felt::zero(), Felt::zero()];
 
         // Absorb message then salt (rate=2)
         absorb(&mut state, message);
@@ -41,7 +44,7 @@ impl PoseidonHashToPoint {
     }
 }
 
-fn absorb(state: &mut Vec<Felt>, input: &[Felt]) {
+fn absorb(state: &mut [Felt; 3], input: &[Felt]) {
     let mut iter = input.iter();
     loop {
         match iter.next() {

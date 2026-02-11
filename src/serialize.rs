@@ -57,3 +57,20 @@ pub fn packing_test_json(values: &[u16], packed: &[Felt]) -> Value {
     payload.extend(serde_felt_array(packed));
     json!({ "packing_test": payload })
 }
+
+/// Generate snforge-compatible JSON for end-to-end verify test data.
+pub fn verify_test_json(
+    message: &[Felt],
+    salt: &[Felt],
+    pk_ntt: &[u16],
+    s1: &[u16],
+    mul_hint: &[u16],
+) -> Value {
+    let mut payload = Vec::new();
+    payload.extend(serde_felt_array(message));
+    payload.extend(serde_felt_array(salt));
+    payload.extend(serde_u16_array(pk_ntt));
+    payload.extend(serde_u16_array(s1));
+    payload.extend(serde_u16_array(mul_hint));
+    json!({ "verify_test": payload })
+}

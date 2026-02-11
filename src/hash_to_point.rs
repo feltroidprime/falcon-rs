@@ -3,15 +3,22 @@
 //! Falcon requires hashing messages to points in Z_q[X]/(X^n + 1).
 //! This module provides the trait and a default SHAKE256 implementation.
 
-use crate::{N, Q, SALT_LEN};
+use crate::{N, Q};
 
 /// Trait for hashing message to polynomial in Z_q[x]/(x^n + 1).
 ///
 /// This trait allows swapping the hash function used in Falcon,
 /// enabling use of Poseidon for Starknet compatibility.
+///
+/// The associated type `Input` determines the element type for message and salt:
+/// - `u8` for byte-oriented hashing (SHAKE256)
+/// - `Felt` for field-element hashing (Poseidon/Starknet)
 pub trait HashToPoint {
+    /// Element type for message and salt slices.
+    type Input;
+
     /// Hash a message with salt to a polynomial in Z_q[x].
-    fn hash_to_point(message: &[u8], salt: &[u8; SALT_LEN]) -> [i16; N];
+    fn hash_to_point(message: &[Self::Input], salt: &[Self::Input]) -> [i16; N];
 }
 
 /// SHAKE256-based hash (matches Python reference implementation).
@@ -20,7 +27,9 @@ pub struct Shake256Hash;
 
 #[cfg(feature = "shake")]
 impl HashToPoint for Shake256Hash {
-    fn hash_to_point(message: &[u8], salt: &[u8; SALT_LEN]) -> [i16; N] {
+    type Input = u8;
+
+    fn hash_to_point(message: &[u8], salt: &[u8]) -> [i16; N] {
         use sha3::{
             digest::{ExtendableOutput, Update, XofReader},
             Shake256,
@@ -56,6 +65,7 @@ impl HashToPoint for Shake256Hash {
 #[cfg(all(test, feature = "shake"))]
 mod tests {
     use super::*;
+    use crate::SALT_LEN;
 
     #[test]
     fn test_shake256_hash_deterministic() {

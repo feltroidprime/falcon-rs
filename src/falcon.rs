@@ -129,6 +129,11 @@ impl VerifyingKey {
         VerifyingKey { h }
     }
 
+    /// Get a reference to the raw public key polynomial h.
+    pub fn h(&self) -> &[i32; N] {
+        &self.h
+    }
+
     /// Serialize the verifying key to bytes.
     pub fn to_bytes(&self) -> [u8; PUBLIC_KEY_LEN] {
         let vec = serialize_public_key(&self.h);
@@ -196,7 +201,7 @@ impl Signature {
 ///
 /// - `H`: The hash function used to map messages to polynomials.
 ///   Use [`Shake256Hash`](crate::hash_to_point::Shake256Hash) for standard
-///   Falcon or [`PoseidonHash`](crate::hash_to_point::PoseidonHash) for
+///   Falcon or [`PoseidonHashToPoint`](crate::poseidon_hash::PoseidonHashToPoint) for
 ///   Starknet compatibility.
 ///
 /// # Example
@@ -345,7 +350,10 @@ impl<H: HashToPoint> Falcon<H> {
     ///
     /// Panics if the system RNG fails to provide random bytes.
     #[cfg(feature = "shake")]
-    pub fn sign(sk: &SecretKey, message: &[u8]) -> Signature {
+    pub fn sign(sk: &SecretKey, message: &[u8]) -> Signature
+    where
+        H: HashToPoint<Input = u8>,
+    {
         use getrandom::getrandom;
 
         // Generate random salt
@@ -374,7 +382,10 @@ impl<H: HashToPoint> Falcon<H> {
     ///
     /// Using the same salt for different messages may leak information
     /// about the secret key. In production, prefer [`sign`](Self::sign).
-    pub fn sign_with_salt(sk: &SecretKey, message: &[u8], salt: &[u8; SALT_LEN]) -> Signature {
+    pub fn sign_with_salt(sk: &SecretKey, message: &[u8], salt: &[u8; SALT_LEN]) -> Signature
+    where
+        H: HashToPoint<Input = u8>,
+    {
         let hashed = H::hash_to_point(message, salt);
         let hashed_i32: Vec<i32> = hashed.iter().map(|&x| x as i32).collect();
 
@@ -410,6 +421,49 @@ impl<H: HashToPoint> Falcon<H> {
             // If norm too large or compression failed, try again with different randomness
             // Advance the seed using RNG output
             seed[SALT_LEN..].copy_from_slice(&rng.random_bytes(SEED_LEN - SALT_LEN)[..]);
+        }
+    }
+
+    /// Sign a pre-computed hash point, returning raw (s0, s1) polynomials.
+    ///
+    /// This enables signing with custom hash functions (e.g., Poseidon)
+    /// where the hash-to-point is computed externally.
+    ///
+    /// # Arguments
+    ///
+    /// * `sk` - The secret key
+    /// * `hash_point` - Pre-computed hash point (512 coefficients in [0, Q))
+    /// * `seed` - 56-byte seed for the sampling PRNG
+    ///
+    /// # Returns
+    ///
+    /// `(s0, s1)` where s0 + s1*h = hash_point (mod q) and ||(s0, s1)|| is small.
+    /// Coefficients are signed integers (centered around 0).
+    pub fn sign_prehashed(
+        sk: &SecretKey,
+        hash_point: &[i16; N],
+        seed: &[u8; SEED_LEN],
+    ) -> (Vec<i32>, Vec<i32>) {
+        let hashed_i32: Vec<i32> = hash_point.iter().map(|&x| x as i32).collect();
+        let mut current_seed = *seed;
+
+        loop {
+            let mut rng = ChaCha20::new(&current_seed);
+            let mut random_bytes = |n: usize| rng.random_bytes(n);
+
+            let (s0, s1) = Self::sample_preimage(sk, &hashed_i32, &mut random_bytes);
+
+            let s0_slice: &[i32] = &s0;
+            let s1_slice: &[i32] = &s1;
+            let norm = sqnorm(&[s0_slice, s1_slice]);
+
+            if norm <= SIG_BOUND {
+                return (s0, s1);
+            }
+
+            // Advance seed
+            current_seed[SALT_LEN..]
+                .copy_from_slice(&rng.random_bytes(SEED_LEN - SALT_LEN)[..]);
         }
     }
 
@@ -487,7 +541,10 @@ impl<H: HashToPoint> Falcon<H> {
     /// - `Ok(true)` if the signature is valid
     /// - `Ok(false)` if the signature is mathematically invalid (wrong key or message)
     /// - `Err(FalconError)` if the signature is malformed
-    pub fn verify(vk: &VerifyingKey, message: &[u8], sig: &Signature) -> Result<bool, FalconError> {
+    pub fn verify(vk: &VerifyingKey, message: &[u8], sig: &Signature) -> Result<bool, FalconError>
+    where
+        H: HashToPoint<Input = u8>,
+    {
         // Decompress s1
         let s1 = decompress(&sig.s1_enc, N).ok_or(FalconError::DecompressionFailed)?;
 
