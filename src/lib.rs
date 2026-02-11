@@ -46,6 +46,7 @@ pub mod packing;
 pub mod poseidon_hash;
 pub mod rng;
 pub mod samplerz;
+pub mod serialize;
 
 #[cfg(feature = "wasm")]
 pub mod wasm;
