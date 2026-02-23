@@ -121,6 +121,92 @@ impl SecretKey {
         bytes.extend_from_slice(&serialize_public_key(&self.capital_g));
         bytes
     }
+
+    /// Deserialize a secret key from bytes.
+    ///
+    /// Format: f || g || F || G (4 polynomials, each 896 bytes).
+    /// Reconstructs `b0_fft` and the LDL tree required for signing.
+    pub fn from_bytes(bytes: &[u8]) -> Result<Self, FalconError> {
+        if bytes.len() != 4 * PUBLIC_KEY_LEN {
+            return Err(FalconError::InvalidSecretKey);
+        }
+
+        let (f_bytes, rest) = bytes.split_at(PUBLIC_KEY_LEN);
+        let (g_bytes, rest) = rest.split_at(PUBLIC_KEY_LEN);
+        let (capital_f_bytes, capital_g_bytes) = rest.split_at(PUBLIC_KEY_LEN);
+
+        let f_raw = deserialize_public_key(f_bytes).ok_or(FalconError::InvalidSecretKey)?;
+        let g_raw = deserialize_public_key(g_bytes).ok_or(FalconError::InvalidSecretKey)?;
+        let capital_f_raw =
+            deserialize_public_key(capital_f_bytes).ok_or(FalconError::InvalidSecretKey)?;
+        let capital_g_raw =
+            deserialize_public_key(capital_g_bytes).ok_or(FalconError::InvalidSecretKey)?;
+
+        let half_q = Q / 2;
+        let mut f = [0i32; N];
+        let mut g = [0i32; N];
+        let mut capital_f = [0i32; N];
+        let mut capital_g = [0i32; N];
+        for i in 0..N {
+            f[i] = if f_raw[i] > half_q {
+                f_raw[i] - Q
+            } else {
+                f_raw[i]
+            };
+            g[i] = if g_raw[i] > half_q {
+                g_raw[i] - Q
+            } else {
+                g_raw[i]
+            };
+            capital_f[i] = if capital_f_raw[i] > half_q {
+                capital_f_raw[i] - Q
+            } else {
+                capital_f_raw[i]
+            };
+            capital_g[i] = if capital_g_raw[i] > half_q {
+                capital_g_raw[i] - Q
+            } else {
+                capital_g_raw[i]
+            };
+        }
+
+        let f_vec: Vec<i32> = f.iter().copied().collect();
+        let g_vec: Vec<i32> = g.iter().copied().collect();
+        let capital_f_vec: Vec<i32> = capital_f.iter().copied().collect();
+        let capital_g_vec: Vec<i32> = capital_g.iter().copied().collect();
+
+        // Keep the exact same reconstruction pipeline used during key generation.
+        let neg_f: Vec<f64> = f_vec.iter().map(|&x| -(x as f64)).collect();
+        let neg_f_cap: Vec<f64> = capital_f_vec.iter().map(|&x| -(x as f64)).collect();
+
+        let b0: [[Vec<f64>; 2]; 2] = [
+            [g_vec.iter().map(|&x| x as f64).collect(), neg_f],
+            [capital_g_vec.iter().map(|&x| x as f64).collect(), neg_f_cap],
+        ];
+
+        let b0_fft = [
+            [fft(&b0[0][0]), fft(&b0[0][1])],
+            [fft(&b0[1][0]), fft(&b0[1][1])],
+        ];
+
+        let g0 = gram(&b0);
+        let g0_fft = [
+            [fft(&g0[0][0]), fft(&g0[0][1])],
+            [fft(&g0[1][0]), fft(&g0[1][1])],
+        ];
+
+        let mut tree = ffldl_fft(&g0_fft);
+        normalize_tree(&mut tree, SIGMA);
+
+        Ok(SecretKey {
+            f,
+            g,
+            capital_f,
+            capital_g,
+            b0_fft,
+            tree,
+        })
+    }
 }
 
 impl VerifyingKey {
@@ -166,6 +252,14 @@ impl Signature {
         bytes.extend_from_slice(&self.salt);
         bytes.extend_from_slice(&self.s1_enc);
         bytes
+    }
+
+    /// Return a reference to the random salt embedded in the signature.
+    ///
+    /// The salt is the 40-byte random value that was generated (or provided)
+    /// at signing time. It is also embedded in the serialized signature bytes.
+    pub fn salt(&self) -> &[u8; SALT_LEN] {
+        &self.salt
     }
 
     /// Deserialize a signature from bytes.
@@ -588,6 +682,96 @@ mod tests {
     use super::*;
     use crate::hash_to_point::Shake256Hash;
 
+    /// `SecretKey::from_bytes` must reconstruct a functionally equivalent key:
+    /// signing with the reconstructed key and verifying with the original vk must succeed.
+    #[test]
+    fn test_secret_key_from_bytes() {
+        let seed = [42u8; 32];
+        let (sk, vk) = Falcon::<Shake256Hash>::keygen_with_seed(&seed);
+
+        let sk_bytes = sk.to_bytes();
+        let sk2 = SecretKey::from_bytes(&sk_bytes).expect("from_bytes must succeed for valid key");
+
+        let message = b"test from_bytes reconstruction";
+        let salt = [5u8; SALT_LEN];
+        let sig = Falcon::<Shake256Hash>::sign_with_salt(&sk2, message, &salt);
+
+        let result = Falcon::<Shake256Hash>::verify(&vk, message, &sig);
+        assert!(result.is_ok(), "sign with reconstructed key must not error");
+        assert!(
+            result.unwrap(),
+            "signature produced from reconstructed key must be valid"
+        );
+    }
+
+    /// `SecretKey::from_bytes` must reject input with wrong length.
+    #[test]
+    fn test_secret_key_from_bytes_rejects_short_input() {
+        let result = SecretKey::from_bytes(&[0u8; 10]);
+        let err = result.err().expect("from_bytes must reject incorrectly-sized input");
+        assert_eq!(err, FalconError::InvalidSecretKey);
+    }
+
+    /// `SecretKey::from_bytes` round-trips: signing with original and reconstructed
+    /// keys with the same salt must produce bit-identical signatures.
+    #[test]
+    fn test_secret_key_from_bytes_identical_signing() {
+        let seed = [99u8; 32];
+        let (sk, _vk) = Falcon::<Shake256Hash>::keygen_with_seed(&seed);
+
+        let sk_bytes = sk.to_bytes();
+        let sk2 = SecretKey::from_bytes(&sk_bytes).expect("round-trip must succeed");
+
+        let message = b"deterministic sign";
+        let salt = [3u8; SALT_LEN];
+
+        // Both keys sign the same message with the same salt → identical signatures
+        let sig1 = Falcon::<Shake256Hash>::sign_with_salt(&sk, message, &salt);
+        let sig2 = Falcon::<Shake256Hash>::sign_with_salt(&sk2, message, &salt);
+
+        assert_eq!(
+            sig1.to_bytes(),
+            sig2.to_bytes(),
+            "original and reconstructed keys must produce identical signatures"
+        );
+    }
+
+    /// `Signature::salt()` must return a reference to the salt used during signing.
+    #[test]
+    fn test_signature_salt_accessor() {
+        let seed = [42u8; 32];
+        let (sk, _vk) = Falcon::<Shake256Hash>::keygen_with_seed(&seed);
+
+        let message = b"salt accessor test";
+        let expected_salt = [7u8; SALT_LEN];
+        let sig = Falcon::<Shake256Hash>::sign_with_salt(&sk, message, &expected_salt);
+
+        assert_eq!(
+            sig.salt(),
+            &expected_salt,
+            "salt() must return the salt used during signing"
+        );
+    }
+
+    /// `Signature::salt()` is preserved through serialization/deserialization.
+    #[test]
+    fn test_signature_salt_after_roundtrip() {
+        let seed = [42u8; 32];
+        let (sk, _vk) = Falcon::<Shake256Hash>::keygen_with_seed(&seed);
+
+        let expected_salt = [0xAB_u8; SALT_LEN];
+        let sig = Falcon::<Shake256Hash>::sign_with_salt(&sk, b"msg", &expected_salt);
+
+        let bytes = sig.to_bytes();
+        let sig2 = Signature::from_bytes(&bytes).unwrap();
+
+        assert_eq!(
+            sig2.salt(),
+            &expected_salt,
+            "salt must survive serialization roundtrip"
+        );
+    }
+
     #[test]
     fn test_keygen_deterministic() {
         let seed = [42u8; 32];
@@ -663,5 +847,120 @@ mod tests {
         let vk2 = VerifyingKey::from_bytes(&bytes).unwrap();
 
         assert_eq!(vk.h, vk2.h);
+    }
+
+    #[test]
+    fn test_secret_key_roundtrip_from_bytes() {
+        let seed = [42u8; 32];
+        let (sk, vk) = Falcon::<Shake256Hash>::keygen_with_seed(&seed);
+
+        let sk_bytes = sk.to_bytes();
+        let sk2 = SecretKey::from_bytes(&sk_bytes).expect("from_bytes should succeed");
+
+        assert_eq!(sk.f, sk2.f, "f polynomial mismatch");
+        assert_eq!(sk.g, sk2.g, "g polynomial mismatch");
+        assert_eq!(sk.capital_f, sk2.capital_f, "F polynomial mismatch");
+        assert_eq!(sk.capital_g, sk2.capital_g, "G polynomial mismatch");
+
+        let message = b"roundtrip test message";
+        let salt = [0u8; SALT_LEN];
+        let sig = Falcon::<Shake256Hash>::sign_with_salt(&sk2, message, &salt);
+        let result = Falcon::<Shake256Hash>::verify(&vk, message, &sig);
+        assert!(result.is_ok());
+        assert!(result.unwrap(), "Signature from reconstructed key should verify");
+    }
+
+    #[test]
+    fn test_secret_key_from_bytes_wrong_length() {
+        let short = vec![0u8; 100];
+        assert!(
+            matches!(SecretKey::from_bytes(&short), Err(FalconError::InvalidSecretKey)),
+            "Should reject bytes with wrong length",
+        );
+
+        let long = vec![0u8; 4 * PUBLIC_KEY_LEN + 1];
+        assert!(
+            matches!(SecretKey::from_bytes(&long), Err(FalconError::InvalidSecretKey)),
+            "Should reject bytes that are too long",
+        );
+
+        assert!(
+            matches!(SecretKey::from_bytes(&[]), Err(FalconError::InvalidSecretKey)),
+            "Should reject empty bytes",
+        );
+    }
+
+    #[test]
+    fn test_secret_key_from_bytes_invalid_coefficients() {
+        let mut bytes = vec![0u8; 4 * PUBLIC_KEY_LEN];
+        bytes[0] = 0x01;
+        bytes[1] = 0x30;
+
+        assert!(
+            matches!(SecretKey::from_bytes(&bytes), Err(FalconError::InvalidSecretKey)),
+            "Should reject bytes with coefficient >= Q",
+        );
+    }
+
+    #[test]
+    fn test_secret_key_from_bytes_b0_fft_matches() {
+        let seed = [42u8; 32];
+        let (sk, _vk) = Falcon::<Shake256Hash>::keygen_with_seed(&seed);
+        let sk2 = SecretKey::from_bytes(&sk.to_bytes()).expect("from_bytes should succeed");
+
+        for row in 0..2 {
+            for col in 0..2 {
+                assert_eq!(
+                    sk.b0_fft[row][col].len(),
+                    sk2.b0_fft[row][col].len(),
+                    "b0_fft[{}][{}] length mismatch",
+                    row,
+                    col
+                );
+
+                for (i, (a, b)) in sk.b0_fft[row][col]
+                    .iter()
+                    .zip(sk2.b0_fft[row][col].iter())
+                    .enumerate()
+                {
+                    assert!(
+                        (a.re - b.re).abs() < 1e-10 && (a.im - b.im).abs() < 1e-10,
+                        "b0_fft[{}][{}][{}] mismatch: {:?} vs {:?}",
+                        row,
+                        col,
+                        i,
+                        a,
+                        b,
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn test_secret_key_from_bytes_sign_multiple_messages() {
+        let seed = [42u8; 32];
+        let (sk, vk) = Falcon::<Shake256Hash>::keygen_with_seed(&seed);
+        let sk2 = SecretKey::from_bytes(&sk.to_bytes()).expect("from_bytes should succeed");
+
+        let binary_message = vec![0xFFu8; 256];
+        let messages: Vec<&[u8]> = vec![
+            b"Hello, Falcon!",
+            b"",
+            b"A longer message that tests with more content to ensure robustness",
+            &binary_message,
+        ];
+
+        for (idx, msg) in messages.iter().enumerate() {
+            let salt = [idx as u8; SALT_LEN];
+            let sig = Falcon::<Shake256Hash>::sign_with_salt(&sk2, msg, &salt);
+            let result = Falcon::<Shake256Hash>::verify(&vk, msg, &sig);
+            assert!(result.is_ok(), "Message {} verification errored", idx);
+            assert!(
+                result.unwrap(),
+                "Message {} signature invalid with reconstructed key",
+                idx
+            );
+        }
     }
 }

@@ -15,27 +15,74 @@ mod wasm_sign_tests {
 
     // ─── sign (native Rust path behind the wasm binding) ────────────────────
 
-    /// The WASM `sign()` binding is a documented placeholder — it always returns
-    /// an error. This test asserts that contract is honoured so we catch any
-    /// unintentional implementation slip.
+    /// `wasm::sign` pathway: keygen → serialize sk → `SecretKey::from_bytes` →
+    /// `sign_with_salt` → `verify`. Validates the complete end-to-end logic that
+    /// `wasm::sign` delegates to, using the exact same Rust calls.
     #[test]
-    fn test_wasm_sign_is_unimplemented_placeholder() {
-        // The wasm.rs `sign()` function intentionally returns an error:
-        // "sign() not yet implemented for WASM. Use native Rust API."
-        // We verify the native API works and document that the wasm wrapper
-        // needs implementation as a separate ticket.
+    fn test_wasm_sign_pathway_from_bytes_then_verify() {
+        use falcon_rs::falcon::{SecretKey, SIGNATURE_LEN};
 
-        // Native signing DOES work — use keygen_with_seed for determinism.
-        let seed = [1u8; 32];
+        let seed = [20u8; 32];
         let (sk, vk) = Falcon::<Shake256Hash>::keygen_with_seed(&seed);
 
-        let message = b"hello wasm";
-        let salt = [0u8; SALT_LEN];
-        let sig = Falcon::<Shake256Hash>::sign_with_salt(&sk, message, &salt);
+        // Simulate what wasm::keygen returns (sk bytes)
+        let sk_bytes = sk.to_bytes();
 
+        // Simulate what wasm::sign does internally
+        let sk2 = SecretKey::from_bytes(&sk_bytes).expect("from_bytes must succeed");
+
+        let message = b"wasm sign pathway integration test";
+        let salt = [0u8; SALT_LEN];
+        let sig = Falcon::<Shake256Hash>::sign_with_salt(&sk2, message, &salt);
+
+        // salt() accessor must work
+        assert_eq!(sig.salt(), &salt, "sig.salt() must match signing salt");
+
+        // Signature length must match the constant
+        let sig_bytes = sig.to_bytes();
+        assert_eq!(
+            sig_bytes.len(),
+            SIGNATURE_LEN,
+            "signature length must be SIGNATURE_LEN={SIGNATURE_LEN}"
+        );
+
+        // Signature must verify
         let result = Falcon::<Shake256Hash>::verify(&vk, message, &sig);
-        assert!(result.is_ok(), "native sign/verify should succeed");
-        assert!(result.unwrap(), "native signature should be valid");
+        assert!(result.is_ok(), "verify must not error");
+        assert!(result.unwrap(), "signature from from_bytes key must verify");
+    }
+
+    /// Salt is correctly threaded through: signing with different salts produces
+    /// different but both-valid signatures.
+    #[test]
+    fn test_wasm_sign_pathway_salt_variety() {
+        use falcon_rs::falcon::SecretKey;
+
+        let seed = [22u8; 32];
+        let (sk, vk) = Falcon::<Shake256Hash>::keygen_with_seed(&seed);
+        let sk_bytes = sk.to_bytes();
+        let sk2 = SecretKey::from_bytes(&sk_bytes).expect("from_bytes must succeed");
+
+        let message = b"salt variety test";
+
+        let salt_a = [0xAA_u8; SALT_LEN];
+        let salt_b = [0xBB_u8; SALT_LEN];
+
+        let sig_a = Falcon::<Shake256Hash>::sign_with_salt(&sk2, message, &salt_a);
+        let sig_b = Falcon::<Shake256Hash>::sign_with_salt(&sk2, message, &salt_b);
+
+        // Different salts → different signatures
+        assert_ne!(sig_a.to_bytes(), sig_b.to_bytes(), "different salts must produce different signatures");
+
+        // Both must return the correct salt via salt()
+        assert_eq!(sig_a.salt(), &salt_a);
+        assert_eq!(sig_b.salt(), &salt_b);
+
+        // Both must verify
+        let r_a = Falcon::<Shake256Hash>::verify(&vk, message, &sig_a);
+        assert!(r_a.is_ok() && r_a.unwrap(), "sig_a must verify");
+        let r_b = Falcon::<Shake256Hash>::verify(&vk, message, &sig_b);
+        assert!(r_b.is_ok() && r_b.unwrap(), "sig_b must verify");
     }
 
     /// Sign with two different seeds produces different signatures
