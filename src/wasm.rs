@@ -93,3 +93,61 @@ pub fn public_key_length() -> usize {
 pub fn salt_length() -> usize {
     SALT_LEN
 }
+
+// ─── wasm-bindgen tests ──────────────────────────────────────────────────────
+//
+// Run with: wasm-pack test --node --features wasm
+// These tests exercise the actual `#[wasm_bindgen]` surface through the
+// wasm-bindgen-test harness (no browser required when using --node).
+
+#[cfg(test)]
+mod wasm_tests {
+    use super::*;
+    use wasm_bindgen_test::wasm_bindgen_test;
+
+    // ── constants ───────────────────────────────────────────────────────────
+
+    /// `public_key_length()` must return 896.
+    #[wasm_bindgen_test]
+    fn wasm_public_key_length_is_896() {
+        assert_eq!(public_key_length(), 896);
+    }
+
+    /// `salt_length()` must return 40.
+    #[wasm_bindgen_test]
+    fn wasm_salt_length_is_40() {
+        assert_eq!(salt_length(), 40);
+    }
+
+    // ── verify ──────────────────────────────────────────────────────────────
+
+    /// `verify()` with wrong pk length returns an error.
+    #[wasm_bindgen_test]
+    fn wasm_verify_rejects_short_pk() {
+        let short_pk = vec![0u8; 10];
+        let result = verify(&short_pk, b"msg", b"sig");
+        assert!(result.is_err(), "short pk must be rejected");
+    }
+
+    /// `verify()` with correct pk length but invalid signature is rejected.
+    #[wasm_bindgen_test]
+    fn wasm_verify_rejects_invalid_signature() {
+        let zero_pk = vec![0u8; PUBLIC_KEY_LEN];
+        let bad_sig = vec![0xFF_u8; 50]; // bad header
+        let result = verify(&zero_pk, b"msg", &bad_sig);
+        assert!(result.is_err(), "invalid signature header must be rejected");
+    }
+
+    // ── sign (placeholder) ──────────────────────────────────────────────────
+
+    /// `sign()` is an acknowledged placeholder — it must return an error.
+    #[wasm_bindgen_test]
+    fn wasm_sign_returns_not_implemented_error() {
+        let sk = vec![0u8; 100];
+        let result = sign(&sk, b"hello", &[0u8; 32]);
+        assert!(
+            result.is_err(),
+            "sign() is a placeholder and must return an error"
+        );
+    }
+}
