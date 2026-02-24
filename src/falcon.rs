@@ -651,6 +651,11 @@ impl<H: HashToPoint> Falcon<H> {
 
 #[cfg(all(test, feature = "shake"))]
 mod tests {
+    // Note: some tests below (roundtrip, wrong-length, invalid-coefficient) intentionally
+    // overlap with the integration tests in `tests/secret_key_from_bytes_test.rs`.
+    // The unit tests here have access to private fields (e.g. b0_fft, f/g/F/G) and verify
+    // internal state consistency; the integration tests verify the same behaviour through
+    // the public API only, acting as an independent regression guard.
     use super::*;
     use crate::hash_to_point::Shake256Hash;
 

@@ -1,4 +1,14 @@
 //! Integration tests for SecretKey::from_bytes reconstruction.
+//!
+//! # Overlap with unit tests in falcon.rs
+//!
+//! Some scenarios here (wrong length, invalid coefficients, roundtrip sign/verify) are
+//! also covered by unit tests inside `falcon.rs::tests`. The duplication is **intentional**:
+//!
+//! - The unit tests verify internal behaviour (e.g. `b0_fft` field equality) from inside
+//!   the crate where private fields are accessible.
+//! - These integration tests verify the same feature through the *public* API surface only,
+//!   providing an independent regression guard that survives future refactors of internals.
 
 #[cfg(feature = "shake")]
 mod tests {
