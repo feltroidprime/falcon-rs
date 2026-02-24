@@ -84,9 +84,11 @@ mod wasm_sign_tests {
 
         // Both must verify
         let r_a = Falcon::<Shake256Hash>::verify(&vk, message, &sig_a);
-        assert!(r_a.is_ok() && r_a.unwrap(), "sig_a must verify");
+        assert!(r_a.is_ok(), "sig_a verification must not error");
+        assert!(r_a.unwrap(), "sig_a must verify");
         let r_b = Falcon::<Shake256Hash>::verify(&vk, message, &sig_b);
-        assert!(r_b.is_ok() && r_b.unwrap(), "sig_b must verify");
+        assert!(r_b.is_ok(), "sig_b verification must not error");
+        assert!(r_b.unwrap(), "sig_b must verify");
     }
 
     /// Signature byte length matches the expected constant.
