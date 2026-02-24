@@ -109,6 +109,45 @@ pub struct Signature {
     s1_enc: Vec<u8>,
 }
 
+/// Compute the basis B0 in FFT representation and the LDL tree from NTRU polynomials.
+///
+/// This is the shared reconstruction pipeline used both during key generation
+/// ([`Falcon::keygen_with_rng`]) and secret key deserialization ([`SecretKey::from_bytes`]).
+/// Keeping the logic in one place prevents the two codepaths from diverging silently.
+fn compute_signing_state(
+    f: &[i32; N],
+    g: &[i32; N],
+    capital_f: &[i32; N],
+    capital_g: &[i32; N],
+) -> ([[Vec<Complex>; 2]; 2], LdlTree) {
+    // Basis B0 = [[g, -f], [G, -F]] — use real negation, NOT modular negation (neg_zq)
+    let neg_f: Vec<f64> = f.iter().map(|&x| -(x as f64)).collect();
+    let neg_f_cap: Vec<f64> = capital_f.iter().map(|&x| -(x as f64)).collect();
+
+    let b0: [[Vec<f64>; 2]; 2] = [
+        [g.iter().map(|&x| x as f64).collect(), neg_f],
+        [capital_g.iter().map(|&x| x as f64).collect(), neg_f_cap],
+    ];
+
+    let b0_fft = [
+        [fft(&b0[0][0]), fft(&b0[0][1])],
+        [fft(&b0[1][0]), fft(&b0[1][1])],
+    ];
+
+    // Compute Gram matrix G0 = B0 * B0^* in coefficient representation
+    let g0 = gram(&b0);
+    let g0_fft = [
+        [fft(&g0[0][0]), fft(&g0[0][1])],
+        [fft(&g0[1][0]), fft(&g0[1][1])],
+    ];
+
+    // Build ffLDL tree
+    let mut tree = ffldl_fft(&g0_fft);
+    normalize_tree(&mut tree, SIGMA);
+
+    (b0_fft, tree)
+}
+
 impl SecretKey {
     /// Serialize the secret key to bytes.
     ///
@@ -143,60 +182,20 @@ impl SecretKey {
             deserialize_public_key(capital_g_bytes).ok_or(FalconError::InvalidSecretKey)?;
 
         let half_q = Q / 2;
+        let center = |raw: i32| if raw > half_q { raw - Q } else { raw };
+
         let mut f = [0i32; N];
         let mut g = [0i32; N];
         let mut capital_f = [0i32; N];
         let mut capital_g = [0i32; N];
         for i in 0..N {
-            f[i] = if f_raw[i] > half_q {
-                f_raw[i] - Q
-            } else {
-                f_raw[i]
-            };
-            g[i] = if g_raw[i] > half_q {
-                g_raw[i] - Q
-            } else {
-                g_raw[i]
-            };
-            capital_f[i] = if capital_f_raw[i] > half_q {
-                capital_f_raw[i] - Q
-            } else {
-                capital_f_raw[i]
-            };
-            capital_g[i] = if capital_g_raw[i] > half_q {
-                capital_g_raw[i] - Q
-            } else {
-                capital_g_raw[i]
-            };
+            f[i] = center(f_raw[i]);
+            g[i] = center(g_raw[i]);
+            capital_f[i] = center(capital_f_raw[i]);
+            capital_g[i] = center(capital_g_raw[i]);
         }
 
-        let f_vec: Vec<i32> = f.iter().copied().collect();
-        let g_vec: Vec<i32> = g.iter().copied().collect();
-        let capital_f_vec: Vec<i32> = capital_f.iter().copied().collect();
-        let capital_g_vec: Vec<i32> = capital_g.iter().copied().collect();
-
-        // Keep the exact same reconstruction pipeline used during key generation.
-        let neg_f: Vec<f64> = f_vec.iter().map(|&x| -(x as f64)).collect();
-        let neg_f_cap: Vec<f64> = capital_f_vec.iter().map(|&x| -(x as f64)).collect();
-
-        let b0: [[Vec<f64>; 2]; 2] = [
-            [g_vec.iter().map(|&x| x as f64).collect(), neg_f],
-            [capital_g_vec.iter().map(|&x| x as f64).collect(), neg_f_cap],
-        ];
-
-        let b0_fft = [
-            [fft(&b0[0][0]), fft(&b0[0][1])],
-            [fft(&b0[1][0]), fft(&b0[1][1])],
-        ];
-
-        let g0 = gram(&b0);
-        let g0_fft = [
-            [fft(&g0[0][0]), fft(&g0[0][1])],
-            [fft(&g0[1][0]), fft(&g0[1][1])],
-        ];
-
-        let mut tree = ffldl_fft(&g0_fft);
-        normalize_tree(&mut tree, SIGMA);
+        let (b0_fft, tree) = compute_signing_state(&f, &g, &capital_f, &capital_g);
 
         Ok(SecretKey {
             f,
@@ -383,34 +382,8 @@ impl<H: HashToPoint> Falcon<H> {
         let mut h = [0i32; N];
         h.copy_from_slice(&h_vec);
 
-        // Compute basis B0 = [[g, -f], [G, -F]] in coefficient representation
-        // Note: Use regular negation, NOT modular negation (neg_zq), for the Gram matrix
-        let neg_f: Vec<f64> = f_vec.iter().map(|&x| -(x as f64)).collect();
-        let neg_f_cap: Vec<f64> = capital_f.iter().map(|&x| -(x as f64)).collect();
-
-        // B0 in coefficient representation (f64 for Gram computation)
-        let b0: [[Vec<f64>; 2]; 2] = [
-            [g_vec.iter().map(|&x| x as f64).collect(), neg_f],
-            [capital_g.iter().map(|&x| x as f64).collect(), neg_f_cap],
-        ];
-
-        // Convert B0 to FFT representation (for use in signing)
-        let b0_fft = [
-            [fft(&b0[0][0]), fft(&b0[0][1])],
-            [fft(&b0[1][0]), fft(&b0[1][1])],
-        ];
-
-        // Compute Gram matrix G0 = B0 * B0^* in coefficient representation
-        // (matching Python's approach: gram() in coef domain, then FFT)
-        let g0 = gram(&b0);
-        let g0_fft = [
-            [fft(&g0[0][0]), fft(&g0[0][1])],
-            [fft(&g0[1][0]), fft(&g0[1][1])],
-        ];
-
-        // Build ffLDL tree
-        let mut tree = ffldl_fft(&g0_fft);
-        normalize_tree(&mut tree, SIGMA);
+        // Compute basis B0 and LDL tree for signing
+        let (b0_fft, tree) = compute_signing_state(&f, &g, &capital_f, &capital_g);
 
         let sk = SecretKey {
             f,
