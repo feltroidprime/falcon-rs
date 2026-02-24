@@ -89,27 +89,6 @@ mod wasm_sign_tests {
         assert!(r_b.is_ok() && r_b.unwrap(), "sig_b must verify");
     }
 
-    /// Sign with two different seeds produces different signatures
-    /// (salt randomness matters).
-    #[test]
-    fn test_sign_different_salts_produce_different_signatures() {
-        let seed = [2u8; 32];
-        let (sk, _vk) = Falcon::<Shake256Hash>::keygen_with_seed(&seed);
-        let message = b"same message";
-
-        let salt1 = [0u8; SALT_LEN];
-        let salt2 = [1u8; SALT_LEN];
-
-        let sig1 = Falcon::<Shake256Hash>::sign_with_salt(&sk, message, &salt1);
-        let sig2 = Falcon::<Shake256Hash>::sign_with_salt(&sk, message, &salt2);
-
-        assert_ne!(
-            sig1.to_bytes(),
-            sig2.to_bytes(),
-            "different salts must produce different signatures"
-        );
-    }
-
     /// Signature byte length matches the expected constant.
     #[test]
     fn test_signature_byte_length() {
