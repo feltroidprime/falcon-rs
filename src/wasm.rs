@@ -70,8 +70,7 @@ pub fn sign(sk_bytes: &[u8], message: &[u8], salt: &[u8]) -> Result<JsValue, JsE
         .map_err(|_| JsError::new("Failed to convert salt to fixed-size array"))?;
 
     // Deserialize the secret key (reconstructs b0_fft and LDL tree)
-    let sk = SecretKey::from_bytes(sk_bytes)
-        .map_err(|e| JsError::new(&e.to_string()))?;
+    let sk = SecretKey::from_bytes(sk_bytes).map_err(|e| JsError::new(&e.to_string()))?;
 
     // Sign the message with the provided salt
     let sig = Falcon::<Shake256Hash>::sign_with_salt(&sk, message, &salt_arr);
@@ -214,14 +213,18 @@ mod wasm_tests {
         let keypair = keygen(&seed).expect("keygen must succeed with 32-byte seed");
 
         // Extract sk bytes from the keypair JsValue
-        let sk_js = js_sys::Reflect::get(&keypair, &"sk".into())
-            .expect("keypair must have sk property");
+        let sk_js =
+            js_sys::Reflect::get(&keypair, &"sk".into()).expect("keypair must have sk property");
         let sk_arr = js_sys::Uint8Array::from(sk_js);
         let sk_bytes = sk_arr.to_vec();
 
         let salt = [0u8; SALT_LEN];
         let result = sign(&sk_bytes, b"hello wasm sign", &salt);
-        assert!(result.is_ok(), "sign() must succeed with valid sk: {:?}", result.err());
+        assert!(
+            result.is_ok(),
+            "sign() must succeed with valid sk: {:?}",
+            result.err()
+        );
 
         let result_obj = result.unwrap();
 
@@ -249,7 +252,11 @@ mod wasm_tests {
 
         // The embedded salt must match what we passed in
         let returned_salt = salt_arr.to_vec();
-        assert_eq!(returned_salt, salt.to_vec(), "returned salt must match input salt");
+        assert_eq!(
+            returned_salt,
+            salt.to_vec(),
+            "returned salt must match input salt"
+        );
     }
 
     /// `sign()` + `verify()` round-trip: a signature produced by `sign()` must
@@ -259,10 +266,8 @@ mod wasm_tests {
         let seed = [21u8; 32];
         let keypair = keygen(&seed).expect("keygen must succeed");
 
-        let sk_js = js_sys::Reflect::get(&keypair, &"sk".into())
-            .expect("keypair must have sk");
-        let vk_js = js_sys::Reflect::get(&keypair, &"vk".into())
-            .expect("keypair must have vk");
+        let sk_js = js_sys::Reflect::get(&keypair, &"sk".into()).expect("keypair must have sk");
+        let vk_js = js_sys::Reflect::get(&keypair, &"vk".into()).expect("keypair must have vk");
 
         let sk_bytes = js_sys::Uint8Array::from(sk_js).to_vec();
         let vk_bytes = js_sys::Uint8Array::from(vk_js).to_vec();
@@ -270,8 +275,7 @@ mod wasm_tests {
         let message = b"wasm sign-verify roundtrip";
         let salt = [1u8; SALT_LEN];
 
-        let sign_result = sign(&sk_bytes, message, &salt)
-            .expect("sign must succeed with valid sk");
+        let sign_result = sign(&sk_bytes, message, &salt).expect("sign must succeed with valid sk");
 
         // Extract the full signature bytes
         let sig_js = js_sys::Reflect::get(&sign_result, &"signature".into())

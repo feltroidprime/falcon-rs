@@ -556,8 +556,7 @@ impl<H: HashToPoint> Falcon<H> {
             }
 
             // Advance seed
-            current_seed[SALT_LEN..]
-                .copy_from_slice(&rng.random_bytes(SEED_LEN - SALT_LEN)[..]);
+            current_seed[SALT_LEN..].copy_from_slice(&rng.random_bytes(SEED_LEN - SALT_LEN)[..]);
         }
     }
 
@@ -708,7 +707,9 @@ mod tests {
     #[test]
     fn test_secret_key_from_bytes_rejects_short_input() {
         let result = SecretKey::from_bytes(&[0u8; 10]);
-        let err = result.err().expect("from_bytes must reject incorrectly-sized input");
+        let err = result
+            .err()
+            .expect("from_bytes must reject incorrectly-sized input");
         assert_eq!(err, FalconError::InvalidSecretKey);
     }
 
@@ -867,25 +868,37 @@ mod tests {
         let sig = Falcon::<Shake256Hash>::sign_with_salt(&sk2, message, &salt);
         let result = Falcon::<Shake256Hash>::verify(&vk, message, &sig);
         assert!(result.is_ok());
-        assert!(result.unwrap(), "Signature from reconstructed key should verify");
+        assert!(
+            result.unwrap(),
+            "Signature from reconstructed key should verify"
+        );
     }
 
     #[test]
     fn test_secret_key_from_bytes_wrong_length() {
         let short = vec![0u8; 100];
         assert!(
-            matches!(SecretKey::from_bytes(&short), Err(FalconError::InvalidSecretKey)),
+            matches!(
+                SecretKey::from_bytes(&short),
+                Err(FalconError::InvalidSecretKey)
+            ),
             "Should reject bytes with wrong length",
         );
 
         let long = vec![0u8; 4 * PUBLIC_KEY_LEN + 1];
         assert!(
-            matches!(SecretKey::from_bytes(&long), Err(FalconError::InvalidSecretKey)),
+            matches!(
+                SecretKey::from_bytes(&long),
+                Err(FalconError::InvalidSecretKey)
+            ),
             "Should reject bytes that are too long",
         );
 
         assert!(
-            matches!(SecretKey::from_bytes(&[]), Err(FalconError::InvalidSecretKey)),
+            matches!(
+                SecretKey::from_bytes(&[]),
+                Err(FalconError::InvalidSecretKey)
+            ),
             "Should reject empty bytes",
         );
     }
@@ -897,7 +910,10 @@ mod tests {
         bytes[1] = 0x30;
 
         assert!(
-            matches!(SecretKey::from_bytes(&bytes), Err(FalconError::InvalidSecretKey)),
+            matches!(
+                SecretKey::from_bytes(&bytes),
+                Err(FalconError::InvalidSecretKey)
+            ),
             "Should reject bytes with coefficient >= Q",
         );
     }

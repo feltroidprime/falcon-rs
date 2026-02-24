@@ -6,8 +6,8 @@ use falcon_rs::falcon::Falcon;
 use falcon_rs::hash_to_point::HashToPoint;
 use falcon_rs::hints::generate_mul_hint;
 use falcon_rs::ntt::ntt;
-use falcon_rs::poseidon_hash::{Felt, PoseidonHashToPoint};
 use falcon_rs::packing::{pack_public_key, unpack_public_key};
+use falcon_rs::poseidon_hash::{Felt, PoseidonHashToPoint};
 use falcon_rs::serialize;
 use falcon_rs::{Q, SEED_LEN};
 use std::fs;
@@ -78,5 +78,9 @@ fn generate_verify_vector() {
     let path = "../s2morrow/packages/falcon/tests/data/verify_test_int.json";
     fs::write(path, serde_json::to_string_pretty(&json).unwrap()).unwrap();
     println!("Wrote verify test vector to {path}");
-    println!("s1 norm check passed, pk_ntt len={}, mul_hint len={}", pk_ntt.len(), mul_hint.len());
+    println!(
+        "s1 norm check passed, pk_ntt len={}, mul_hint len={}",
+        pk_ntt.len(),
+        mul_hint.len()
+    );
 }

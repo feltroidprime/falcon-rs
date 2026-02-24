@@ -137,6 +137,12 @@ mod tests {
         drbg.init(&seed_arr, None);
         let output = drbg.generate_vec(64);
 
-        eprintln!("Rust: {}", output.iter().map(|b| format!("{:02x}", b)).collect::<String>());
+        eprintln!(
+            "Rust: {}",
+            output
+                .iter()
+                .map(|b| format!("{:02x}", b))
+                .collect::<String>()
+        );
     }
 }

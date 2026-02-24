@@ -3,7 +3,7 @@
 //! Generates the mul_hint = INTT(NTT(s1) * pk_h_ntt) that allows
 //! Cairo to verify NTT products without computing INTT on-chain.
 
-use crate::ntt::{ntt, intt, mul_ntt};
+use crate::ntt::{intt, mul_ntt, ntt};
 use crate::Q;
 
 /// Generate INTT(NTT(s1) * pk_h_ntt) — the mul_hint for verification.
@@ -15,10 +15,7 @@ pub fn generate_mul_hint(s1: &[u16], pk_h_ntt: &[u16]) -> Vec<u16> {
     let product_ntt = mul_ntt(&s1_ntt, &pk_i32);
     let product = intt(&product_ntt);
 
-    product
-        .iter()
-        .map(|&v| v.rem_euclid(Q) as u16)
-        .collect()
+    product.iter().map(|&v| v.rem_euclid(Q) as u16).collect()
 }
 
 #[cfg(test)]

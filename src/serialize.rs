@@ -38,11 +38,7 @@ fn felt_to_json_value(f: &Felt) -> Value {
 }
 
 /// Generate snforge-compatible JSON for hash_to_point test data.
-pub fn hash_to_point_test_json(
-    message: &[Felt],
-    salt: &[Felt],
-    expected: &[u16],
-) -> Value {
+pub fn hash_to_point_test_json(message: &[Felt], salt: &[Felt], expected: &[u16]) -> Value {
     let mut payload = Vec::new();
     payload.extend(serde_felt_array(message));
     payload.extend(serde_felt_array(salt));

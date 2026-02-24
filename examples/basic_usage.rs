@@ -16,7 +16,10 @@ fn main() {
 
     // Step 2: Sign a message
     let message = b"Hello, post-quantum world!";
-    println!("\n2. Signing message: {:?}", String::from_utf8_lossy(message));
+    println!(
+        "\n2. Signing message: {:?}",
+        String::from_utf8_lossy(message)
+    );
     let signature = Falcon::<Shake256Hash>::sign(&secret_key, message);
     println!("   Message signed successfully!");
     println!("   Signature length: {} bytes", signature.to_bytes().len());
@@ -31,7 +34,10 @@ fn main() {
 
     // Step 4: Demonstrate verification failure with wrong message
     let wrong_message = b"This is a different message";
-    println!("\n4. Verifying with wrong message: {:?}", String::from_utf8_lossy(wrong_message));
+    println!(
+        "\n4. Verifying with wrong message: {:?}",
+        String::from_utf8_lossy(wrong_message)
+    );
     match Falcon::<Shake256Hash>::verify(&verifying_key, wrong_message, &signature) {
         Ok(true) => println!("   Signature is VALID (unexpected!)"),
         Ok(false) => println!("   Signature is INVALID (expected behavior)"),
@@ -46,7 +52,8 @@ fn main() {
     println!("   Public key: {} bytes", pk_bytes.len());
 
     // Deserialize public key
-    let restored_vk = VerifyingKey::from_bytes(&pk_bytes).expect("Failed to deserialize public key");
+    let restored_vk =
+        VerifyingKey::from_bytes(&pk_bytes).expect("Failed to deserialize public key");
 
     // Serialize signature
     let sig_bytes = signature.to_bytes();

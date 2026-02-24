@@ -24,13 +24,19 @@ mod tests {
     #[test]
     fn test_secret_key_from_bytes_rejects_wrong_length() {
         assert!(
-            matches!(SecretKey::from_bytes(&[]), Err(FalconError::InvalidSecretKey)),
+            matches!(
+                SecretKey::from_bytes(&[]),
+                Err(FalconError::InvalidSecretKey)
+            ),
             "empty byte slice should fail",
         );
 
         let short = vec![0u8; PUBLIC_KEY_LEN];
         assert!(
-            matches!(SecretKey::from_bytes(&short), Err(FalconError::InvalidSecretKey)),
+            matches!(
+                SecretKey::from_bytes(&short),
+                Err(FalconError::InvalidSecretKey)
+            ),
             "single polynomial length should fail",
         );
     }
@@ -42,7 +48,10 @@ mod tests {
         bytes[1] = 0x30;
 
         assert!(
-            matches!(SecretKey::from_bytes(&bytes), Err(FalconError::InvalidSecretKey)),
+            matches!(
+                SecretKey::from_bytes(&bytes),
+                Err(FalconError::InvalidSecretKey)
+            ),
             "invalid encoded coefficient should fail",
         );
     }
