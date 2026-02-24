@@ -72,7 +72,11 @@ mod wasm_sign_tests {
         let sig_b = Falcon::<Shake256Hash>::sign_with_salt(&sk2, message, &salt_b);
 
         // Different salts → different signatures
-        assert_ne!(sig_a.to_bytes(), sig_b.to_bytes(), "different salts must produce different signatures");
+        assert_ne!(
+            sig_a.to_bytes(),
+            sig_b.to_bytes(),
+            "different salts must produce different signatures"
+        );
 
         // Both must return the correct salt via salt()
         assert_eq!(sig_a.salt(), &salt_a);
@@ -152,10 +156,7 @@ mod hint_generation_tests {
         s1[0] = 1;
         let s1_i32: Vec<i32> = s1.iter().map(|&v| v as i32).collect();
         let pk_ntt_i32 = ntt(&s1_i32);
-        let pk_ntt: Vec<u16> = pk_ntt_i32
-            .iter()
-            .map(|&v| v.rem_euclid(Q) as u16)
-            .collect();
+        let pk_ntt: Vec<u16> = pk_ntt_i32.iter().map(|&v| v.rem_euclid(Q) as u16).collect();
 
         let hint = generate_mul_hint(&s1, &pk_ntt);
 
@@ -183,15 +184,10 @@ mod hint_generation_tests {
     #[test]
     fn test_generate_mul_hint_range() {
         let s1: Vec<u16> = (0..512).map(|i| (i * 37 % (Q as usize)) as u16).collect();
-        let pk_ntt: Vec<u16> = (0..512)
-            .map(|i| (i * 53 % (Q as usize)) as u16)
-            .collect();
+        let pk_ntt: Vec<u16> = (0..512).map(|i| (i * 53 % (Q as usize)) as u16).collect();
         let hint = generate_mul_hint(&s1, &pk_ntt);
         for (i, &v) in hint.iter().enumerate() {
-            assert!(
-                (v as i32) < Q,
-                "hint[{i}] = {v} is not in [0, Q={Q})"
-            );
+            assert!((v as i32) < Q, "hint[{i}] = {v} is not in [0, Q={Q})");
         }
     }
 
@@ -199,9 +195,7 @@ mod hint_generation_tests {
     #[test]
     fn test_generate_mul_hint_zero_s1() {
         let s1 = vec![0u16; 512];
-        let pk_ntt: Vec<u16> = (0..512)
-            .map(|i| (i * 37 % (Q as usize)) as u16)
-            .collect();
+        let pk_ntt: Vec<u16> = (0..512).map(|i| (i * 37 % (Q as usize)) as u16).collect();
         let hint = generate_mul_hint(&s1, &pk_ntt);
         assert!(hint.iter().all(|&v| v == 0), "zero s1 must give zero hint");
     }
@@ -212,16 +206,17 @@ mod hint_generation_tests {
         let s1: Vec<u16> = (0..512).map(|i| (i * 37 % (Q as usize)) as u16).collect();
         let pk_ntt = vec![0u16; 512];
         let hint = generate_mul_hint(&s1, &pk_ntt);
-        assert!(hint.iter().all(|&v| v == 0), "zero pk_ntt must give zero hint");
+        assert!(
+            hint.iter().all(|&v| v == 0),
+            "zero pk_ntt must give zero hint"
+        );
     }
 
     /// Hint is consistent: calling generate_mul_hint twice with same inputs gives same result.
     #[test]
     fn test_generate_mul_hint_deterministic() {
         let s1: Vec<u16> = (0..512).map(|i| (i * 7 % (Q as usize)) as u16).collect();
-        let pk_ntt: Vec<u16> = (0..512)
-            .map(|i| (i * 13 % (Q as usize)) as u16)
-            .collect();
+        let pk_ntt: Vec<u16> = (0..512).map(|i| (i * 13 % (Q as usize)) as u16).collect();
         let h1 = generate_mul_hint(&s1, &pk_ntt);
         let h2 = generate_mul_hint(&s1, &pk_ntt);
         assert_eq!(h1, h2, "generate_mul_hint must be deterministic");
@@ -280,7 +275,9 @@ mod public_key_packing_tests {
     /// Round-trip with alternating values.
     #[test]
     fn test_pack_unpack_alternating() {
-        let values: Vec<u16> = (0..512).map(|i| if i % 2 == 0 { 0 } else { 12288 }).collect();
+        let values: Vec<u16> = (0..512)
+            .map(|i| if i % 2 == 0 { 0 } else { 12288 })
+            .collect();
         assert_eq!(
             unpack_public_key(&pack_public_key(&values)),
             values,
@@ -304,7 +301,10 @@ mod public_key_packing_tests {
         let v2: Vec<u16> = vec![1u16; 512];
         let p1 = pack_public_key(&v1);
         let p2 = pack_public_key(&v2);
-        assert_ne!(p1, p2, "distinct inputs must produce distinct packed outputs");
+        assert_ne!(
+            p1, p2,
+            "distinct inputs must produce distinct packed outputs"
+        );
     }
 }
 
@@ -326,7 +326,10 @@ mod wasm_verify_tests {
         let sig = Falcon::<Shake256Hash>::sign_with_salt(&sk, message, &salt);
 
         let result = Falcon::<Shake256Hash>::verify(&vk, message, &sig);
-        assert!(result.is_ok() && result.unwrap(), "valid signature should verify");
+        assert!(
+            result.is_ok() && result.unwrap(),
+            "valid signature should verify"
+        );
     }
 
     /// Wrong message fails verification.
@@ -347,17 +350,21 @@ mod wasm_verify_tests {
     #[test]
     fn test_wasm_verify_invalid_pk_length() {
         let short_pk = vec![0u8; PUBLIC_KEY_LEN - 1];
-        let result = VerifyingKey::from_bytes(
-            &short_pk
-                .as_slice()
-                .try_into()
-                .unwrap_or([0u8; PUBLIC_KEY_LEN]),
+
+        let converted: Result<[u8; PUBLIC_KEY_LEN], _> = short_pk.as_slice().try_into();
+        assert!(
+            converted.is_err(),
+            "short public key bytes must not convert to fixed-size array"
         );
+
         // The wasm binding checks len != PUBLIC_KEY_LEN before calling from_bytes.
         // Here we verify from_bytes on a zero-filled key (valid encoding) works.
         let zero_pk = [0u8; PUBLIC_KEY_LEN];
         let vk_result = VerifyingKey::from_bytes(&zero_pk);
-        assert!(vk_result.is_ok(), "zero pk bytes must deserialize without error");
+        assert!(
+            vk_result.is_ok(),
+            "zero pk bytes must deserialize without error"
+        );
     }
 
     /// Invalid signature header is rejected.
