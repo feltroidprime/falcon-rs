@@ -9,6 +9,8 @@ use wasm_bindgen::prelude::*;
 
 use crate::falcon::{Falcon, SecretKey, Signature, VerifyingKey, PUBLIC_KEY_LEN};
 use crate::hash_to_point::Shake256Hash;
+use crate::hints::generate_mul_hint;
+use crate::packing::pack_public_key;
 use crate::SALT_LEN;
 
 /// Generate a new Falcon-512 keypair.
@@ -136,6 +138,166 @@ pub fn salt_length() -> usize {
     SALT_LEN
 }
 
+/// Create a verification hint for Cairo on-chain verification.
+///
+/// Computes `INTT(NTT(s1) * pk_ntt)` — the mul_hint that allows
+/// Cairo to verify NTT products with 2 forward NTTs and 0 INTTs.
+///
+/// Parameters:
+/// - `s1`: 512 signature coefficients (each in [0, 12289))
+/// - `pk_ntt`: 512 public key NTT coefficients (each in [0, 12289))
+///
+/// Returns: Vec of 512 hint coefficients (returned as Uint16Array to JS).
+#[wasm_bindgen]
+pub fn create_verification_hint(s1: &[i32], pk_ntt: &[i32]) -> Result<Vec<u16>, JsError> {
+    if s1.len() != 512 {
+        return Err(JsError::new(&format!(
+            "Invalid s1 length: expected 512, got {}",
+            s1.len()
+        )));
+    }
+    if pk_ntt.len() != 512 {
+        return Err(JsError::new(&format!(
+            "Invalid pk_ntt length: expected 512, got {}",
+            pk_ntt.len()
+        )));
+    }
+
+    let s1_u16: Vec<u16> = s1.iter().map(|&v| v as u16).collect();
+    let pk_u16: Vec<u16> = pk_ntt.iter().map(|&v| v as u16).collect();
+
+    Ok(generate_mul_hint(&s1_u16, &pk_u16))
+}
+
+/// Pack a public key (512 Zq values) into 29 felt252 storage slots.
+///
+/// Uses base-Q Horner encoding: 18 values per felt252 (9 per u128 half).
+/// This achieves a 17x calldata reduction (512 → 29 slots).
+///
+/// Parameters:
+/// - `pk_ntt`: 512 public key NTT coefficients (each in [0, 12289))
+///
+/// Returns: Array of 29 hex strings, each representing a felt252.
+#[wasm_bindgen]
+pub fn pack_public_key_wasm(pk_ntt: &[u16]) -> Result<Vec<String>, JsError> {
+    if pk_ntt.len() != 512 {
+        return Err(JsError::new(&format!(
+            "Invalid pk_ntt length: expected 512, got {}",
+            pk_ntt.len()
+        )));
+    }
+
+    let packed = pack_public_key(pk_ntt);
+    Ok(packed.iter().map(|f| format!("0x{}", f.to_hex())).collect())
+}
+
+/// Sign a Starknet transaction hash using Falcon-512 with Poseidon hash-to-point.
+///
+/// This produces a signature in the format expected by the Cairo FalconAccount contract:
+/// - 29 packed felt252 for s1 (signature polynomial)
+/// - 29 packed felt252 for mul_hint (verification hint)
+/// - 2 felt252 for the salt
+/// - 1 felt252 for the salt length
+/// Total: 61 felt252 elements.
+///
+/// Parameters:
+/// - `sk_bytes`: Secret key bytes (serialized SecretKey)
+/// - `tx_hash`: Transaction hash as hex string (felt252)
+/// - `pk_ntt`: 512 public key NTT coefficients (each in [0, 12289))
+///
+/// Returns: Array of 61 hex strings, each representing a felt252.
+#[wasm_bindgen]
+pub fn sign_for_starknet(
+    sk_bytes: &[u8],
+    tx_hash: &str,
+    pk_ntt: &[i32],
+) -> Result<Vec<String>, JsError> {
+    use crate::hash_to_point::HashToPoint;
+    use crate::poseidon_hash::{Felt, PoseidonHashToPoint};
+
+    if pk_ntt.len() != 512 {
+        return Err(JsError::new(&format!(
+            "Invalid pk_ntt length: expected 512, got {}",
+            pk_ntt.len()
+        )));
+    }
+
+    // 1. Deserialize secret key
+    let sk = SecretKey::from_bytes(sk_bytes)
+        .map_err(|e| JsError::new(&format!("Invalid secret key: {e}")))?;
+
+    // 2. Parse tx_hash as felt252
+    let tx_hash_felt = Felt::from_hex(tx_hash)
+        .map_err(|_| JsError::new(&format!("Invalid tx_hash hex: {tx_hash}")))?;
+
+    // 3. Generate random salt (2 felt252 values)
+    let salt_bytes = getrandom_salt()?;
+    let salt_felt0 = Felt::from_hex(&format!("0x{}", bytes_to_hex(&salt_bytes[..31])))
+        .map_err(|_| JsError::new("Failed to create salt felt 0"))?;
+    let salt_felt1 = Felt::from_hex(&format!("0x{}", bytes_to_hex(&salt_bytes[31..62])))
+        .map_err(|_| JsError::new("Failed to create salt felt 1"))?;
+    let salt = vec![salt_felt0, salt_felt1];
+
+    // 4. Compute msg_point = PoseidonHashToPoint([tx_hash], salt)
+    let message = vec![tx_hash_felt];
+    let msg_point = PoseidonHashToPoint::hash_to_point(&message, &salt);
+
+    // 5. Sign the prehashed point
+    let sign_seed = {
+        let mut s = [0u8; crate::SEED_LEN];
+        s[..crate::SALT_LEN].copy_from_slice(&salt_bytes[..crate::SALT_LEN]);
+        s
+    };
+    let (_s0, s1) = Falcon::<PoseidonHashToPoint>::sign_prehashed(&sk, &msg_point, &sign_seed);
+
+    // 6. Convert s1 to u16 (unsigned mod Q)
+    let s1_u16: Vec<u16> = s1.iter().map(|&v| v.rem_euclid(crate::Q) as u16).collect();
+
+    // 7. Convert pk_ntt to u16
+    let pk_u16: Vec<u16> = pk_ntt.iter().map(|&v| v.rem_euclid(crate::Q) as u16).collect();
+
+    // 8. Compute mul_hint = INTT(NTT(s1) * pk_ntt)
+    let mul_hint = generate_mul_hint(&s1_u16, &pk_u16);
+
+    // 9. Pack s1 into 29 felt252
+    let packed_s1 = pack_public_key(&s1_u16);
+
+    // 10. Pack mul_hint into 29 felt252
+    let packed_hint = pack_public_key(&mul_hint);
+
+    // 11. Build output: [packed_s1(29), packed_hint(29), salt(2), salt_len(1)] = 61 elements
+    let mut result: Vec<String> = Vec::with_capacity(61);
+    for f in &packed_s1 {
+        result.push(format!("0x{}", f.to_hex()));
+    }
+    for f in &packed_hint {
+        result.push(format!("0x{}", f.to_hex()));
+    }
+    for f in &salt {
+        result.push(format!("0x{}", f.to_hex()));
+    }
+    // Salt length as felt252
+    result.push(format!("0x{:x}", salt.len()));
+
+    Ok(result)
+}
+
+/// Convert bytes to hex string (avoids dependency on hex crate in non-dev builds).
+fn bytes_to_hex(bytes: &[u8]) -> String {
+    bytes.iter().map(|b| format!("{b:02x}")).collect()
+}
+
+/// Generate random bytes for salt using getrandom.
+fn getrandom_salt() -> Result<Vec<u8>, JsError> {
+    let mut bytes = vec![0u8; 62]; // 2 * 31 bytes (each < felt252 max)
+    getrandom::getrandom(&mut bytes)
+        .map_err(|e| JsError::new(&format!("Failed to generate random salt: {e}")))?;
+    // Ensure each 31-byte chunk is < P (Stark prime) by clearing top bit
+    bytes[0] &= 0x07; // first chunk high byte
+    bytes[31] &= 0x07; // second chunk high byte
+    Ok(bytes)
+}
+
 // ─── wasm-bindgen tests ──────────────────────────────────────────────────────
 //
 // Run with: wasm-pack test --node --features wasm
@@ -258,6 +420,36 @@ mod wasm_tests {
             "returned salt must match input salt"
         );
     }
+
+    // ── create_verification_hint ──────────────────────────────────────
+
+    #[wasm_bindgen_test]
+    fn wasm_create_verification_hint_rejects_wrong_length() {
+        let short = vec![0i32; 10];
+        let correct = vec![0i32; 512];
+        assert!(create_verification_hint(&short, &correct).is_err());
+        assert!(create_verification_hint(&correct, &short).is_err());
+    }
+
+    // ── pack_public_key_wasm ────────────────────────────────────────────
+
+    #[wasm_bindgen_test]
+    fn wasm_pack_public_key_rejects_wrong_length() {
+        let short = vec![0u16; 10];
+        assert!(pack_public_key_wasm(&short).is_err());
+    }
+
+    #[wasm_bindgen_test]
+    fn wasm_pack_public_key_returns_29_slots() {
+        let pk = vec![0u16; 512];
+        let result = pack_public_key_wasm(&pk).expect("packing zeros must succeed");
+        assert_eq!(result.len(), 29, "must produce exactly 29 felt252 slots");
+        for slot in &result {
+            assert!(slot.starts_with("0x"), "each slot must be 0x-prefixed hex");
+        }
+    }
+
+    // ── sign + verify roundtrip ─────────────────────────────────────────
 
     /// `sign()` + `verify()` round-trip: a signature produced by `sign()` must
     /// pass `verify()` with the corresponding verifying key.
