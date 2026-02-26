@@ -126,6 +126,29 @@ pub fn verify(vk_bytes: &[u8], message: &[u8], signature: &[u8]) -> Result<bool,
     Falcon::<Shake256Hash>::verify(&vk, message, &sig).map_err(|e| JsError::new(&e.to_string()))
 }
 
+/// Transform public key from time domain to NTT domain.
+///
+/// The verifying key stores `h` in time domain, but Starknet verification
+/// requires NTT-domain `h_ntt` for pointwise multiplication checks.
+/// Call this on the parsed VK coefficients before packing or signing.
+///
+/// Parameters:
+/// - `pk_time`: 512 public key coefficients in time domain (each in [0, 12289))
+///
+/// Returns: 512 NTT-domain coefficients.
+#[wasm_bindgen]
+pub fn ntt_public_key(pk_time: &[i32]) -> Result<Vec<i32>, JsError> {
+    use crate::ntt::ntt;
+    if pk_time.len() != 512 {
+        return Err(JsError::new(&format!(
+            "Invalid pk length: expected 512, got {}",
+            pk_time.len()
+        )));
+    }
+    let ntt_result = ntt(pk_time);
+    Ok(ntt_result.iter().map(|&v| v.rem_euclid(crate::Q)).collect())
+}
+
 /// Get the public key length in bytes.
 #[wasm_bindgen]
 pub fn public_key_length() -> usize {
@@ -188,16 +211,17 @@ pub fn pack_public_key_wasm(pk_ntt: &[u16]) -> Result<Vec<String>, JsError> {
     }
 
     let packed = pack_public_key(pk_ntt);
-    Ok(packed.iter().map(|f| format!("0x{}", f.to_hex())).collect())
+    Ok(packed.iter().map(|f| format!("0x{}", felt_to_hex(f))).collect())
 }
 
 /// Sign a Starknet transaction hash using Falcon-512 with Poseidon hash-to-point.
 ///
-/// This produces a signature in the format expected by the Cairo FalconAccount contract:
+/// This produces a signature in the format expected by the Cairo FalconAccount contract,
+/// matching the Serde layout of `PackedFalconSignatureWithHint`:
 /// - 29 packed felt252 for s1 (signature polynomial)
+/// - 1 felt252 for the salt array length
+/// - 2 felt252 for the salt data
 /// - 29 packed felt252 for mul_hint (verification hint)
-/// - 2 felt252 for the salt
-/// - 1 felt252 for the salt length
 /// Total: 61 felt252 elements.
 ///
 /// Parameters:
@@ -265,21 +289,39 @@ pub fn sign_for_starknet(
     // 10. Pack mul_hint into 29 felt252
     let packed_hint = pack_public_key(&mul_hint);
 
-    // 11. Build output: [packed_s1(29), packed_hint(29), salt(2), salt_len(1)] = 61 elements
+    // 11. Build output matching Cairo Serde<PackedFalconSignatureWithHint> order:
+    //     [packed_s1(29), salt_len(1), salt_data(2), packed_hint(29)] = 61 elements
+    //
+    //     Cairo struct layout (Serde order):
+    //       signature.s1:   PackedPolynomial512  (29 felt252)
+    //       signature.salt: Array<felt252>       (1 length + N elements)
+    //       hint.mul_hint:  PackedPolynomial512  (29 felt252)
     let mut result: Vec<String> = Vec::with_capacity(61);
     for f in &packed_s1 {
-        result.push(format!("0x{}", f.to_hex()));
+        result.push(format!("0x{}", felt_to_hex(f)));
+    }
+    // Salt as Array<felt252>: length first, then data
+    result.push(format!("0x{:x}", salt.len()));
+    for f in &salt {
+        result.push(format!("0x{}", felt_to_hex(f)));
     }
     for f in &packed_hint {
-        result.push(format!("0x{}", f.to_hex()));
+        result.push(format!("0x{}", felt_to_hex(f)));
     }
-    for f in &salt {
-        result.push(format!("0x{}", f.to_hex()));
-    }
-    // Salt length as felt252
-    result.push(format!("0x{:x}", salt.len()));
 
     Ok(result)
+}
+
+/// Convert a Felt to a canonical hex string (NOT Montgomery form).
+///
+/// `Felt::to_hex()` returns the Montgomery representation which is WRONG for
+/// external consumption. Use `to_bytes_be()` instead to get the actual value.
+fn felt_to_hex(f: &crate::poseidon_hash::Felt) -> String {
+    let bytes = f.to_bytes_be();
+    let hex: String = bytes.iter().map(|b| format!("{b:02x}")).collect();
+    // Strip leading zeros but keep at least one character
+    let stripped = hex.trim_start_matches('0');
+    if stripped.is_empty() { "0".to_string() } else { stripped.to_string() }
 }
 
 /// Convert bytes to hex string (avoids dependency on hex crate in non-dev builds).
